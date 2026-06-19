@@ -1,0 +1,4 @@
+- **Interpreter:** Use `#!/usr/bin/env bash`.
+- **Formatting:** 4 spaces for indentation, standard `shfmt` style.
+- **Safety:** Always use `set -euo pipefail` at the top of scripts. Double-quote all variable expansions.
+- **Linter Alignment:** Code must pass ShellCheck with zero warnings or errors.

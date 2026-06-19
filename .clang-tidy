@@ -1,0 +1,11 @@
+Checks: >
+  -*,
+  bugprone-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -modernize-use-trailing-return-type
+WarningsAsErrors: ''
+HeaderFilterExpression: 'include/.*'
