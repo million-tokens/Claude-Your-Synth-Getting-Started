@@ -1,4 +1,15 @@
 {
+    "permissions": {
+        "allow": [
+            "Bash(chmod +x *)",
+            "Bash(ls *)",
+            "Bash(find *)",
+            "Bash(cmake *)",
+            "Bash(make *)",
+            "Bash(jq *)",
+            "Read"
+        ]
+    },
     "hooks": {
         "PostToolUse": [
             {
