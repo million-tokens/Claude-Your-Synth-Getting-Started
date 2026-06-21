@@ -80,3 +80,22 @@ Configures Claude Code (the AI assistant) so formatting is applied without you h
 This means the AI assistant follows the same style rules as the rest of the toolchain.
 
 ---
+
+## `build.sh` — One-Command Build and Run
+
+```bash
+./build.sh
+```
+
+# Starting
+
+Make sure ccflare proxy is running 
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:8080
+```
+
+Ready to go! Run:
+
+```bash
+claude
+```
