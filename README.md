@@ -91,7 +91,7 @@ This means the AI assistant follows the same style rules as the rest of the tool
 
 Make sure ccflare proxy is running 
 ```bash
-export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_BASE_URL=http://localhost:8080/v1/anthropic
 ```
 
 Ready to go! Run:
