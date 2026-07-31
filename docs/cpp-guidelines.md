@@ -1,12 +1,10 @@
-- Write strictly in C++20.
-- Rely on smart pointers (std::unique_ptr, std::shared_ptr); never use raw new/delete.
-- Prioritize memory safety, explicit resource management, and crash prevention.
-- No legacy C-style workarounds when modern C++20 abstractions exist.
-- **Standard:** Strictly C++20.
-- **Formatting:** Follow the LLVM style guide. Use 4 spaces for indentation.
+- **Standard:** Strictly C++20. No legacy C-style workarounds when C++20 abstractions exist.
+- **Formatting:** LLVM style guide. 4 spaces for indentation.
 - **Safety:** Absolutely no raw `new`/`delete`. Use `std::unique_ptr` or `std::shared_ptr`.
-- **Modern Paradigms:** 
+  Prioritize memory safety, explicit resource management, crash prevention.
+- **Modern Paradigms:**
   - Use C++20 **Concepts** instead of `std::enable_if` or SFINAE.
-  - Use **`std::span`** for passing contiguous memory views (avoid raw pointer + size pairs).
-  - Prefer **`std::ranges`** and standard views over traditional iterator loops where appropriate.
-- **Linter Alignment:** Ensure code complies with `bugprone-*`, `cppcoreguidelines-*`, and `modernize-*` clang-tidy rule sets.
+  - Use **`std::span`** for contiguous memory views (avoid raw pointer + size pairs).
+  - Prefer **`std::ranges`** and standard views over iterator loops where appropriate.
+- **Linter Alignment:** Comply with `bugprone-*`, `cppcoreguidelines-*`, `modernize-*` clang-tidy
+  rule sets.
