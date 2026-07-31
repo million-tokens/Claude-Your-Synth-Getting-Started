@@ -8,23 +8,26 @@ workshop.
 
 ## Architecture
 
-The project is deliberately small. One CMake target builds one executable.
+The project is deliberately small. One CMake target builds the application, a second one builds the
+tests.
 
 ```
-CMakeLists.txt   # CMake project, fetches JUCE 8.0.4, defines the JuceMinimal target
-build.sh         # configures, builds and runs the executable
-src/Main.cpp     # entry point
-tests/           # test sources (empty for now)
-docs/            # code guidelines for Claude Code
-CLAUDE.md        # top-level brief for Claude Code
+CMakeLists.txt         # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
+build.sh               # configures, builds and runs the executable
+test.sh                # builds and runs the tests
+src/Main.cpp           # entry point
+tests/CMakeLists.txt   # fetches Catch2 v3, defines the MiniSynthTests target
+tests/ExampleTest.cpp  # example tests
+docs/                  # code guidelines for Claude Code
+CLAUDE.md              # top-level brief for Claude Code
 ```
 
 - **Build system:** CMake 3.22 or later.
-- **Dependency:** CMake `FetchContent` downloads JUCE 8.0.4 at configure time. You do not install
-  JUCE yourself. The first configure step takes some minutes.
-- **Target:** `JuceMinimal`, a console application. It links `juce::juce_core` plus the JUCE
-  recommended configuration and warning flags. The build disables the JUCE web browser and cURL
-  support.
+- **Dependencies:** CMake `FetchContent` downloads JUCE 8.0.4 and Catch2 v3.7.1 at configure time.
+  You do not install them yourself. The first configure step takes some minutes.
+- **Targets:** `MiniSynth`, a console application, and `MiniSynthTests`, the test binary. Both
+  link `juce::juce_core` plus the JUCE recommended configuration and warning flags. The build
+  disables the JUCE web browser and cURL support.
 - **Standard:** C++20. CMake also writes `compile_commands.json` for clang-tidy and the editor.
 
 ---
@@ -35,8 +38,30 @@ CLAUDE.md        # top-level brief for Claude Code
 ./build.sh
 ```
 
-The script configures a Release build in `build/`, compiles it with all available cores, then runs
-the executable. If the build gives no binary, the script prints a message and exits with an error.
+The script configures a Release build in `build/`, compiles the `MiniSynth` target with all
+available cores, then runs the executable. If the build gives no binary, the script prints a message
+and exits with an error. The script does not compile the tests.
+
+---
+
+## Test
+
+```bash
+./test.sh
+```
+
+The script uses the same `build/` directory, so it reuses the JUCE download. It builds only the
+`MiniSynthTests` target, then runs the tests with `ctest`. CMake registers each Catch2 test case
+as a separate `ctest` test. If a test fails, `ctest` prints its output.
+
+To run the test binary directly, and to get the Catch2 command-line options, run:
+
+```bash
+./build/tests/MiniSynthTests --help
+```
+
+Add new test files to `tests/`, then list them in the `add_executable` command in
+`tests/CMakeLists.txt`.
 
 ---
 
