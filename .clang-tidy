@@ -8,4 +8,4 @@ Checks: >
   -cppcoreguidelines-avoid-magic-numbers,
   -modernize-use-trailing-return-type
 WarningsAsErrors: ''
-HeaderFilterExpression: 'include/.*'
+HeaderFilterExpression: 'src/.*'
