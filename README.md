@@ -15,6 +15,7 @@ tests.
 CMakeLists.txt         # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
 build.sh               # configures, builds and runs the executable
 test.sh                # builds and runs the tests
+workshop.sh            # moves the checkout between the lesson tags, sets up the Claude profile
 src/Main.cpp           # entry point
 tests/CMakeLists.txt   # fetches Catch2 v3, defines the MiniSynthTests target
 tests/ExampleTest.cpp  # example tests
@@ -62,6 +63,133 @@ To run the test binary directly, and to get the Catch2 command-line options, run
 
 Add new test files to `tests/`, then list them in the `add_executable` command in
 `tests/CMakeLists.txt`.
+
+---
+
+## Workshop navigation
+
+`workshop.sh` moves your checkout between the lessons of the workshop. Each lesson is an annotated
+git tag in the upstream repository, for example `lesson-03-filter`. The tag message holds the lesson
+title.
+
+```bash
+./workshop.sh list                     # show the lesson tags
+./workshop.sh reset lesson-03-filter   # move your branch to the state of lesson 03
+./workshop.sh reset main               # go back to the starting point
+./workshop.sh reset                    # choose the lesson from a menu
+./workshop.sh pull                     # get the latest fixes from upstream main
+```
+
+Work on your own branch. The script refuses to change `main`, because `main` keeps your reference
+copy of the starter. To make a work branch, run:
+
+```bash
+git switch -c my-work
+```
+
+`reset` discards local commits and uncommitted changes on the current branch. The script prints a
+warning and asks for confirmation first.
+
+The script needs SSH access to GitHub. It adds a temporary `upstream` remote, fetches, then removes
+the remote again. The lesson tags stay in your repository, so `git switch --detach lesson-03-filter`
+also works after the first run.
+
+Two environment variables change the source:
+
+- `WORKSHOP_UPSTREAM` - the upstream repository URL or a local path. Default: the workshop
+  repository over SSH.
+- `WORKSHOP_TAG_PREFIX` - the prefix that marks a lesson tag. Default: `lesson-`.
+
+### For the workshop author: how to make a lesson
+
+The tags are the only thing that the workshop needs. A lesson branch is not necessary, because a tag
+keeps its commit alive on its own. Work with a detached HEAD, then push the tag alone:
+
+```bash
+git switch --detach main
+# ... write the code for lesson 01 ...
+git commit -am "Add a sine oscillator"
+git tag -a lesson-01-oscillator -m "Add a sine oscillator"
+git push origin lesson-01-oscillator
+
+# ... write the code for lesson 02 on top ...
+git commit -am "Add an ADSR envelope"
+git tag -a lesson-02-envelope -m "Add an ADSR envelope"
+git push origin lesson-02-envelope
+
+git switch main
+```
+
+The repository keeps the tags and nothing else. No lesson branch appears in `git branch -a`, and
+`git log main` shows only the starter history.
+
+Two rules keep the menu correct:
+
+- Start every tag name with the prefix, then a zero-padded number. The menu sorts by tag name, so
+  `lesson-01` must come before `lesson-10`.
+- Use annotated tags (`git tag -a`). The script shows the tag message as the lesson title.
+
+To move a tag after a fix, force the update on both sides:
+
+```bash
+git tag -f -a lesson-01-oscillator -m "Add a sine oscillator"
+git push --force origin lesson-01-oscillator
+```
+
+The student gets the new position at the next `./workshop.sh reset`, because the script fetches the
+tags with a force refspec.
+
+To remove a lesson, delete the tag on both sides:
+
+```bash
+git tag -d lesson-01-oscillator
+git push origin --delete lesson-01-oscillator
+```
+
+---
+
+## Isolated Claude configuration
+
+The workshop runs on a separate Claude Code configuration. Your own settings, skills, hooks and
+session history stay in `~/.claude`. The workshop does not read them and does not change them.
+
+[Agent Deck](https://github.com/asheshgoplani/agent-deck) supplies the mechanism. A named profile
+points Claude Code at a different configuration directory. `workshop.sh` makes the profile for you:
+
+```bash
+./workshop.sh profile setup    # make the workshop profile and its configuration
+./workshop.sh profile status   # show which configuration the profile uses
+./workshop.sh profile remove   # delete the profile and its configuration
+```
+
+`setup` does four things. It makes the directory `~/claude-synth-workshop/claude-config`. It adds
+the profile to Agent Deck. It adds this block to `~/.config/agent-deck/config.toml`, after it copies
+that file to `config.toml.workshop-bak`:
+
+```toml
+[profiles.synth-workshop.claude]
+config_dir = "/Users/you/claude-synth-workshop/claude-config"
+```
+
+Then it installs the Agent Deck hooks into the new configuration and prints the result. Run `setup`
+again at any time. It changes nothing that is already correct.
+
+To start the workshop, give Agent Deck the profile:
+
+```bash
+agent-deck -p synth-workshop
+```
+
+The first Claude session in the new profile starts logged out, because the sign-in record lives in
+the configuration directory. Run `claude auth login` once inside the session.
+
+To go back to your own setup, start Agent Deck without the option. Nothing else is necessary,
+because the script deletes nothing from `~/.claude`.
+
+Two environment variables change the target:
+
+- `WORKSHOP_PROFILE` - the name of the Agent Deck profile. Default: `synth-workshop`.
+- `WORKSHOP_HOME` - the directory of the workshop configuration. Default: `~/claude-synth-workshop`.
 
 ---
 
