@@ -12,15 +12,15 @@ The project is deliberately small. One CMake target builds the application, a se
 tests.
 
 ```
-CMakeLists.txt         # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
-build.sh               # configures, builds and runs the executable
-test.sh                # builds and runs the tests
-workshop.sh            # moves the checkout between the lesson tags, sets up the Claude profile
-src/Main.cpp           # entry point
-tests/CMakeLists.txt   # fetches Catch2 v3, defines the MiniSynthTests target
-tests/ExampleTest.cpp  # example tests
-docs/                  # code guidelines for Claude Code
-CLAUDE.md              # top-level brief for Claude Code
+CMakeLists.txt             # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
+build.sh                   # configures, builds and runs the executable
+test.sh                    # builds and runs the tests
+workshop.sh                # moves the checkout between the lesson tags, sets up the Claude profile
+src/Main.cpp               # entry point
+tests/CMakeLists.txt       # fetches Catch2 v3, defines the MiniSynthTests target
+tests/ProductNameTest.cpp  # smoke test: the product name macro is "MiniSynth"
+docs/                      # code guidelines for Claude Code
+CLAUDE.md                  # top-level brief for Claude Code
 ```
 
 - **Build system:** CMake 3.22 or later.
