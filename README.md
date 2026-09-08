@@ -16,6 +16,8 @@ CMakeLists.txt             # CMake project, fetches JUCE 8.0.4, defines the Mini
 build.sh                   # configures, builds and runs the executable
 test.sh                    # builds and runs the tests
 workshop.sh                # moves the checkout between the lesson tags, sets up the Claude profile
+capture.sh                 # records what a session sends to the model, renders it as HTML
+capture/                   # the proxy and the renderer behind capture.sh
 src/Main.cpp               # entry point
 tests/CMakeLists.txt       # fetches Catch2 v3, defines the MiniSynthTests target
 tests/ProductNameTest.cpp  # smoke test: the product name macro is "MiniSynth"
@@ -195,17 +197,118 @@ Two environment variables change the target:
 
 ## Start a Claude Code session
 
-Make sure that the ccflare proxy runs, then point Claude Code to it:
-
 ```bash
-export ANTHROPIC_BASE_URL=http://localhost:8080/v1/anthropic
+agent-deck -p synth-workshop
 ```
 
-Ready to go! Run:
+To record what the session sends to the model, start the capture proxy first and point Claude Code
+at it. See the next section.
+
+---
+
+## See what the model actually received
+
+The model is a stateless function. It keeps nothing between calls, so every request carries the
+whole context again: a system prompt, the schema of every tool, and the conversation so far. That
+payload is what your instructions, your `CLAUDE.md` and your context hygiene actually produce, and
+it is the thing worth looking at when a session behaves in a way you did not expect.
+
+Claude Code's own transcript in `~/.claude/projects/` does not hold it. The transcript records the
+conversation — your messages, the answers, the tool calls — but not the system prompt, not the tool
+schemas and not the cache breakpoints. Those exist only on the wire. To see them, you have to record
+the requests.
+
+`capture.sh` does that with a proxy. Claude Code sends its requests to whatever `ANTHROPIC_BASE_URL`
+names, so a local proxy in front of the API sees every byte.
 
 ```bash
-claude
+./capture.sh start                                # terminal 1: the recorder
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 2
+agent-deck -p synth-workshop                      # terminal 2: work as usual
+./capture.sh render                               # after the session: the page
 ```
+
+`start` runs until Ctrl-C and writes one JSON file per API call into `captures/<timestamp>/`.
+`render` turns a recording into a single `captures/<timestamp>/index.html` and opens it. Inside a
+session, the `/capture` command renders the current recording.
+
+```
+capture.sh          # start | render | list
+capture/proxy.py    # the recorder. Forwards to the API, keeps a copy
+capture/render.py   # the reader. Recording -> one HTML page
+captures/           # the recordings. Stays out of git
+```
+
+The two halves are separate on purpose. The proxy sits in the critical path of your session, so it
+parses nothing and decides nothing: it moves bytes and drops a copy on disk. Everything that could
+be wrong or slow lives in `render.py`, which runs afterwards over the files.
+
+### What the page shows
+
+Every request repeats the previous one, extended. A page that printed each request in full would be
+the session written out N times, so the renderer prints only what **changed** since the previous
+call of the same conversation:
+
+- **System prompt** — in full on the first call, then only when it changes. A change mid-session
+  means the harness injected something: a skill, a reminder, a compaction.
+- **Tool schemas** — the names always, the full JSON on demand, and a marker when a tool appears or
+  disappears. This is usually the largest fixed block in the prompt.
+- **Cache breakpoints** — where the request asks the API to cut a cache segment. When a breakpoint
+  moves, everything after it must be written to the cache again, and the call gets expensive.
+- **New messages** — the ones appended since the last call. The replayed history stays folded away.
+- **The answer** — reassembled from the stream, with its `stop_reason` and token counts.
+
+Requests are grouped into **chains** by their first message. A subagent, a compaction and the main
+conversation each open their own first message, so each gets its own chain instead of polluting the
+others' diffs.
+
+### The token table
+
+The page opens with one row per API call. The numbers come from the API's own `usage`, so they are
+what you are billed for:
+
+```
+  req  chain  model         prompt_in   fresh   cache_read   cache_write   output   new_turn    ms
+    1      1  claude-opus-5     33933       2            0         33931       18          -  4210
+    2      1  claude-opus-5     34057       2        33931           124       94        106  2980
+    3      1  claude-opus-5     44114       2        34055         10057      425       9963  7104
+```
+
+- `prompt_in` is the whole prompt of that call. It only grows.
+- `fresh` is the part the cache did not hold. It stays near zero, because almost every token is
+  replayed history.
+- `cache_read` of call N is close to `prompt_in` of call N-1: each call is the previous one,
+  extended.
+- `new_turn` is `prompt_in[N] - prompt_in[N-1] - output[N-1]` — the tokens your message and the tool
+  results added. A large value marks a file read or a wide tool result that entered the conversation
+  and now rides along in every later call.
+- A drop in `prompt_in` means a compaction.
+
+A low cache hit rate makes a session expensive. The summary line at the top gives the rate, the
+largest prompt of the run and the totals.
+
+### Options and limits
+
+```bash
+./capture.sh start -p 9000        # another port
+./capture.sh list                 # the recordings
+./capture.sh render <dir> -O      # a named recording, do not open a browser
+```
+
+- `CAPTURE_PORT`, `CAPTURE_DIR` and `CAPTURE_UPSTREAM` set the same things from the environment.
+- The proxy asks the API for uncompressed responses, so that the recording is readable text. That
+  costs some bandwidth on the way in and nothing else.
+- Credentials are never written: the recording stores `authorization` and `x-api-key` as
+  `<redacted>`. Everything else in the recording — your prompts, your files, the answers — is as
+  sensitive as the session itself. `captures/` is in `.gitignore`.
+- The proxy only sees what crosses the network. Hooks, local tool execution and anything Claude Code
+  resolves without an API call leave no trace in the recording.
+- Only sessions that ran through the proxy are recorded. There is nothing to look at afterwards for
+  a session that did not.
+
+To collect numbers for a fleet of sessions rather than the content of one, use the OpenTelemetry
+export instead: `CLAUDE_CODE_ENABLE_TELEMETRY=1` with the `OTEL_*` variables. See
+<https://code.claude.com/docs/en/monitoring-usage>.
 
 ---
 
