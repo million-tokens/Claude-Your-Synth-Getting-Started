@@ -10,16 +10,29 @@ TAG_PREFIX="${WORKSHOP_TAG_PREFIX:-lesson-}"
 BASE_BRANCH="main"
 REMOTE="upstream"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 PROFILE_NAME="${WORKSHOP_PROFILE:-synth-workshop}"
 WORKSHOP_HOME="${WORKSHOP_HOME:-${HOME}/claude-synth-workshop}"
 PROFILE_CONFIG_DIR="${WORKSHOP_HOME}/claude-config"
 DECK_CONFIG="${XDG_CONFIG_HOME:-${HOME}/.config}/agent-deck/config.toml"
+
+WORKSHOP_CAPTURE="${WORKSHOP_CAPTURE:-1}"
+CAPTURE_PROXY="${SCRIPT_DIR}/capture/proxy.py"
+CAPTURE_DIR="${WORKSHOP_CAPTURE_DIR:-${SCRIPT_DIR}/captures}"
+CAPTURE_PORT="${WORKSHOP_CAPTURE_PORT:-8788}"
+CAPTURE_PID=""
+CAPTURE_LOG=""
 
 REMOTE_EXISTED="unknown"
 
 die() {
     printf 'Error: %s\n' "$*" >&2
     exit 1
+}
+
+warn() {
+    printf 'Warning: %s\n' "$*" >&2
 }
 
 usage() {
@@ -35,12 +48,19 @@ Claude configuration commands:
   profile setup        Make the isolated Claude configuration for the workshop.
   profile status       Show which Claude configuration the workshop profile uses.
   profile remove       Delete the workshop profile and its Claude configuration.
+  claude [args...]     Start a workshop session through Agent Deck, and record
+                       what it sends to the model. See the recording afterwards
+                       with "./capture.sh render".
 
 Environment:
   WORKSHOP_UPSTREAM    Upstream repository URL. Default: the workshop repository over SSH.
   WORKSHOP_TAG_PREFIX  Prefix of the lesson tags. Default: lesson-
   WORKSHOP_PROFILE     Name of the Agent Deck profile. Default: synth-workshop
   WORKSHOP_HOME        Directory of the workshop configuration. Default: ~/claude-synth-workshop
+  WORKSHOP_CAPTURE     Set to 0 to start the session without recording. Default: 1
+  WORKSHOP_CAPTURE_DIR Directory of the recordings. Default: ./captures
+  WORKSHOP_CAPTURE_PORT
+                       First port the recorder tries. Default: 8788
 
 If you give no lesson-tag, the script shows a menu.
 USAGE
@@ -244,12 +264,129 @@ remove_profile_block() {
     mv "${temp}" "${DECK_CONFIG}"
 }
 
+# --- Recording what the model receives ---------------------------------------
+#
+# ANTHROPIC_BASE_URL is a Claude Code variable: it names the endpoint that Claude
+# Code sends its requests to. "workshop.sh claude" starts the capture proxy on a
+# local port, points that variable at it, and stops the proxy again when the
+# session ends. The proxy forwards every request to the API untouched and keeps a
+# copy, so that you can see afterwards what the model actually received. See
+# "See what the model actually received" in README.md.
+#
+# Recording is best effort. If it cannot start, the session runs without it: a
+# broken recorder must never cost you a session.
+
+port_is_free() {
+    ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+find_free_port() {
+    local port="$1" last=$(($1 + 20))
+    while ((port <= last)); do
+        if port_is_free "${port}"; then
+            printf '%s\n' "${port}"
+            return 0
+        fi
+        port=$((port + 1))
+    done
+    return 1
+}
+
+capture_available() {
+    [[ "${WORKSHOP_CAPTURE}" != "0" ]] &&
+        [[ -f "${CAPTURE_PROXY}" ]] &&
+        command -v python3 >/dev/null 2>&1
+}
+
+start_capture() {
+    local port waited=0
+
+    capture_available || return 1
+
+    if ! port="$(find_free_port "${CAPTURE_PORT}")"; then
+        warn "no free port near ${CAPTURE_PORT}. The session runs without a recording."
+        return 1
+    fi
+
+    CAPTURE_LOG="$(mktemp -t workshop-capture)"
+    python3 "${CAPTURE_PROXY}" --port "${port}" --dir "${CAPTURE_DIR}" >"${CAPTURE_LOG}" 2>&1 &
+    CAPTURE_PID=$!
+
+    # Claude Code must not send its first request before the proxy listens.
+    while port_is_free "${port}"; do
+        if ((waited > 50)) || ! kill -0 "${CAPTURE_PID}" 2>/dev/null; then
+            warn "the recorder did not start. The session runs without a recording."
+            cat "${CAPTURE_LOG}" >&2
+            rm -f "${CAPTURE_LOG}"
+            CAPTURE_PID=""
+            return 1
+        fi
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+
+    CAPTURE_PORT="${port}"
+}
+
+# Ask first, insist later, and never block the shell that is trying to exit.
+stop_capture() {
+    local pid="${CAPTURE_PID}" waited=0
+
+    [[ -n "${pid}" ]] || return 0
+    CAPTURE_PID=""
+
+    # TERM rather than KILL, so the proxy finishes the file it is writing.
+    kill -TERM "${pid}" 2>/dev/null || true
+    while kill -0 "${pid}" 2>/dev/null; do
+        if ((waited > 50)); then
+            kill -KILL "${pid}" 2>/dev/null || true
+            break
+        fi
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+
+    wait "${pid}" 2>/dev/null || true
+    rm -f "${CAPTURE_LOG}"
+}
+
+newest_capture_run() {
+    find "${CAPTURE_DIR}" -mindepth 1 -maxdepth 1 -type d -name '20*' 2>/dev/null | sort | tail -n 1
+}
+
+print_capture_result() {
+    local run count
+
+    run="$(newest_capture_run)"
+    [[ -n "${run}" ]] || return 0
+
+    count="$(find "${run}" -maxdepth 1 -name '[0-9]*.json' | wc -l | tr -d ' ')"
+    printf '\nRecorded %s API calls in %s\n' "${count}" "${run}"
+    printf 'To see what the model received, run:\n\n    ./capture.sh render\n\n'
+}
+
+capture_status_line() {
+    if [[ "${WORKSHOP_CAPTURE}" == "0" ]]; then
+        printf 'off (WORKSHOP_CAPTURE=0)\n'
+    elif [[ ! -f "${CAPTURE_PROXY}" ]]; then
+        printf 'unavailable: %s is missing\n' "${CAPTURE_PROXY}"
+    elif ! command -v python3 >/dev/null 2>&1; then
+        printf 'unavailable: python3 is not installed\n'
+    else
+        printf 'on, port %s, into %s\n' "${CAPTURE_PORT}" "${CAPTURE_DIR}"
+    fi
+}
+
 print_launch_help() {
     cat <<HELP
 
 To start the workshop, run:
 
-    agent-deck -p ${PROFILE_NAME}
+    ./workshop.sh claude
+
+That is "agent-deck -p ${PROFILE_NAME}" with the session recorded. When it ends,
+run "./capture.sh render" to see the requests as the model received them. To
+start a session without a recording, run "agent-deck -p ${PROFILE_NAME}" yourself.
 
 The first Claude session in this profile starts logged out. Run "claude auth login"
 once inside it. To go back to your own setup, start agent-deck without the option.
@@ -272,7 +409,8 @@ cmd_profile_status() {
         die "The profile resolves no configuration. Check its block in ${DECK_CONFIG}."
     fi
 
-    printf 'Resolved: %s\n\n' "${actual}"
+    printf 'Resolved: %s\n' "${actual}"
+    printf 'Recording: %s\n\n' "$(capture_status_line)"
 
     if [[ "${actual}" != "${expected}" ]]; then
         die "The profile uses another configuration. Check the block in ${DECK_CONFIG}."
@@ -351,6 +489,35 @@ cmd_profile_remove() {
     printf 'Removed. Your own ~/.claude is untouched.\n'
 }
 
+# Start a workshop session through Agent Deck, with the traffic recorded.
+#
+# Agent Deck is the launcher and not "claude" itself, because the profile carries
+# the isolated configuration and the hooks that "profile setup" installed. Any
+# argument goes on to agent-deck.
+cmd_claude() {
+    local status=0
+
+    require_agent_deck
+    deck_profile_exists ||
+        die "No workshop profile \"${PROFILE_NAME}\" yet. Run: ./workshop.sh profile setup"
+
+    # Without a recording there is nothing to clean up afterwards, so hand the
+    # process over to Agent Deck and keep this script out of the way.
+    if ! start_capture; then
+        exec agent-deck -p "${PROFILE_NAME}" "$@"
+    fi
+
+    trap stop_capture EXIT INT TERM
+    printf 'Recording this session on port %s. Nothing else about the session changes.\n' "${CAPTURE_PORT}"
+
+    ANTHROPIC_BASE_URL="http://127.0.0.1:${CAPTURE_PORT}" \
+        agent-deck -p "${PROFILE_NAME}" "$@" || status=$?
+
+    stop_capture
+    print_capture_result
+    return "${status}"
+}
+
 cmd_profile() {
     local action="${1:-status}"
     case "${action}" in
@@ -372,12 +539,18 @@ main() {
     }
     shift
 
-    # The profile commands change the Claude configuration and not the checkout,
-    # so they need no git repository and no upstream remote.
-    if [[ "${command}" == "profile" ]]; then
-        cmd_profile "${1:-status}"
-        return 0
-    fi
+    # The profile and claude commands work on the Claude configuration and not
+    # the checkout, so they need no git repository and no upstream remote.
+    case "${command}" in
+        profile)
+            cmd_profile "${1:-status}"
+            return 0
+            ;;
+        claude)
+            cmd_claude "$@"
+            return 0
+            ;;
+    esac
 
     require_git_repo
     trap disconnect_upstream EXIT

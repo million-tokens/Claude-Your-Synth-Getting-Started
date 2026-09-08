@@ -176,11 +176,17 @@ config_dir = "/Users/you/claude-synth-workshop/claude-config"
 Then it installs the Agent Deck hooks into the new configuration and prints the result. Run `setup`
 again at any time. It changes nothing that is already correct.
 
-To start the workshop, give Agent Deck the profile:
+To start the workshop:
 
 ```bash
-agent-deck -p synth-workshop
+./workshop.sh claude
 ```
+
+This is `agent-deck -p synth-workshop`, and any argument after `claude` passes straight through. It
+also records the session: it starts the capture proxy, sets `ANTHROPIC_BASE_URL` to it for that
+session only, and stops it again when you quit. See "See what the model actually received" below.
+Agent Deck stays the launcher, because the profile carries the isolated configuration and the hooks
+that `profile setup` installed.
 
 The first Claude session in the new profile starts logged out, because the sign-in record lives in
 the configuration directory. Run `claude auth login` once inside the session.
@@ -188,21 +194,25 @@ the configuration directory. Run `claude auth login` once inside the session.
 To go back to your own setup, start Agent Deck without the option. Nothing else is necessary,
 because the script deletes nothing from `~/.claude`.
 
-Two environment variables change the target:
+These environment variables change the target:
 
 - `WORKSHOP_PROFILE` - the name of the Agent Deck profile. Default: `synth-workshop`.
 - `WORKSHOP_HOME` - the directory of the workshop configuration. Default: `~/claude-synth-workshop`.
+- `WORKSHOP_CAPTURE` - set to `0` to start the session without recording it. Default: `1`.
+- `WORKSHOP_CAPTURE_DIR` - where the recordings go. Default: `./captures`.
+- `WORKSHOP_CAPTURE_PORT` - the first port the recorder tries. Default: `8788`.
 
 ---
 
 ## Start a Claude Code session
 
 ```bash
-agent-deck -p synth-workshop
+./workshop.sh claude
 ```
 
-To record what the session sends to the model, start the capture proxy first and point Claude Code
-at it. See the next section.
+That is `agent-deck -p synth-workshop`, with the session recorded. Any argument after `claude` goes
+on to Agent Deck. To start a session without a recording, run `agent-deck -p synth-workshop`
+yourself, or set `WORKSHOP_CAPTURE=0`. The next section says what the recording is for.
 
 ---
 
@@ -220,6 +230,21 @@ the requests.
 
 `capture.sh` does that with a proxy. Claude Code sends its requests to whatever `ANTHROPIC_BASE_URL`
 names, so a local proxy in front of the API sees every byte.
+
+**`./workshop.sh claude` does this for you.** It starts the recorder, points the session at it, stops
+it when you quit, and tells you where the recording is:
+
+```bash
+./workshop.sh claude      # work as usual. The session is recorded.
+./capture.sh render       # afterwards: the page
+```
+
+Recording is best effort. If the recorder cannot start — no `python3`, no free port, nowhere to
+write — the script says so and starts the session anyway. A broken recorder never costs you a
+session. `WORKSHOP_CAPTURE=0` turns it off, and `./workshop.sh profile status` shows the current
+state.
+
+To record a session that you start yourself, run the two halves by hand:
 
 ```bash
 ./capture.sh start                                # terminal 1: the recorder
@@ -296,6 +321,9 @@ largest prompt of the run and the totals.
 ```
 
 - `CAPTURE_PORT`, `CAPTURE_DIR` and `CAPTURE_UPSTREAM` set the same things from the environment.
+  Through `workshop.sh` the names are `WORKSHOP_CAPTURE`, `WORKSHOP_CAPTURE_PORT` and
+  `WORKSHOP_CAPTURE_DIR`. A busy port is not an error: the recorder walks forward until it finds a
+  free one.
 - The proxy asks the API for uncompressed responses, so that the recording is readable text. That
   costs some bandwidth on the way in and nothing else.
 - Credentials are never written: the recording stores `authorization` and `x-api-key` as
