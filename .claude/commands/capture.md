@@ -8,7 +8,7 @@ script names.
 
 The script reads the requests that `./capture.sh start` recorded and writes two
 pages per recording: `index.html`, what changed between calls, and
-`profile.html`, what one call is made of. Do not read the recording or the page into the
+`context_profiler.html`, what one call is made of. Do not read the recording or the page into the
 context: both hold the whole session, repeated once per API call.
 
 If the script reports that there are no recordings, tell the user that the proxy

@@ -255,14 +255,14 @@ agent-deck -p synth-workshop                      # terminal 2: work as usual
 
 `start` runs until Ctrl-C and writes one JSON file per API call into `captures/<timestamp>/`.
 `render` turns a recording into two pages in `captures/<timestamp>/` and opens the first:
-`index.html`, what changed between calls, and `profile.html`, what one call is made of. Each page
+`index.html`, what changed between calls, and `context_profiler.html`, what one call is made of. Each page
 links to the other. Inside a session, the `/capture` command renders the current recording.
 
 ```
 capture.sh          # start | render | list
 capture/proxy.py    # the recorder. Forwards to the API, keeps a copy
 capture/render.py   # the reader. Recording -> index.html, the diff between calls
-capture/profile.py  # the profiler. Recording -> profile.html, the parts of one call
+capture/profile.py  # the profiler. Recording -> context_profiler.html, the parts of one call
 captures/           # the recordings. Stays out of git
 ```
 
@@ -316,7 +316,7 @@ largest prompt of the run and the totals.
 
 ### The context profile
 
-`profile.html` is a profiler for the prompt. Pick a request at the top; the tree on the left is
+`context_profiler.html` is a profiler for the prompt. Pick a request at the top; the tree on the left is
 that request broken into its parts, the pane on the right is the content of the part you selected.
 
 ```
@@ -356,7 +356,8 @@ request 7                          58,342 tokens
   changes; a part after the last breakpoint is sent fresh every call.
 - **Moving around.** Left and right arrow keys step through the requests. The selection stays on
   the same part, so you can watch one tool result or one system block from call to call. "Sort by
-  size" orders every level by cost instead of wire order.
+  size" orders every level by cost instead of wire order. The table on the right follows that
+  toggle until you click one of its column headers; a second click flips the direction.
 
 The answer of call N is the last row, set apart, because it becomes part of the prompt of call N+1.
 

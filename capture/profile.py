@@ -453,7 +453,8 @@ pre { margin:.4rem 0; padding:.6rem .7rem; background:var(--code); border-radius
 table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; font-size:13px; margin:.5rem 0 1rem; }
 th, td { padding:.3rem .5rem; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }
 th:first-child, td:first-child { text-align:left; white-space:normal; }
-th { color:var(--muted); font-weight:600; }
+th { color:var(--muted); font-weight:600; cursor:pointer; user-select:none; }
+th:hover, th.on { color:var(--fg); }
 td a { color:var(--accent); cursor:pointer; }
 .note { color:var(--muted); font-size:12px; margin:.5rem 0; }
 footer { padding:.5rem 1.5rem; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
@@ -463,7 +464,9 @@ JS = r"""
 (function () {
     var data = JSON.parse(document.getElementById('data').textContent);
     var requests = data.requests, content = data.content;
-    var state = { req: 0, path: 'request', sortBySize: false, raw: false, open: {} };
+    // paneSort is null while the table follows the tree's sort toggle; clicking
+    // a column header gives the table an order of its own.
+    var state = { req: 0, path: 'request', sortBySize: false, raw: false, open: {}, paneSort: null };
     var $ = function (id) { return document.getElementById(id); };
     var n = function (x) { return (x || 0).toLocaleString('en-US'); };
     var pct = function (a, b) { return b ? (100 * a / b).toFixed(1) + '%' : '-'; };
@@ -616,9 +619,24 @@ JS = r"""
 
         if (item.children.length) {
             var t = el('table');
-            t.innerHTML = '<tr><th>part</th><th>chars</th><th>≈ tokens</th><th>share</th></tr>';
+            var head = el('tr');
+            [['part', 'wire'], ['chars', 'size'], ['≈ tokens', 'size'], ['share', 'size']].forEach(function (col) {
+                var sort = state.paneSort || { key: state.sortBySize ? 'size' : 'wire', desc: state.sortBySize };
+                var active = sort.key === col[1] && (col[1] !== 'size' || col[0] === '≈ tokens');
+                var th = el('th', active ? 'on' : '', col[0] + (active ? (sort.desc ? ' ▾' : ' ▴') : ''));
+                th.title = 'sort by ' + col[0];
+                th.onclick = function () {
+                    var same = sort.key === col[1];
+                    state.paneSort = { key: col[1], desc: same ? !sort.desc : col[1] === 'size' };
+                    renderPane();
+                };
+                head.appendChild(th);
+            });
+            t.appendChild(head);
             var kids = item.children.slice();
-            if (state.sortBySize) kids.sort(function (a, b) { return b.tok - a.tok; });
+            var order = state.paneSort || { key: state.sortBySize ? 'size' : 'wire', desc: state.sortBySize };
+            if (order.key === 'size') kids.sort(function (a, b) { return b.tok - a.tok; });
+            if (order.desc !== (order.key === 'size')) kids.reverse();
             kids.forEach(function (k) {
                 var tr = el('tr');
                 var td = el('td'); var a = el('a', '', k.label);
@@ -649,7 +667,7 @@ JS = r"""
         renderPicker(); renderTree(); renderPane();
     }
 
-    $('sort').onclick = function () { state.sortBySize = !state.sortBySize; $('sort').className = state.sortBySize ? 'on' : ''; renderTree(); renderPane(); };
+    $('sort').onclick = function () { state.sortBySize = !state.sortBySize; state.paneSort = null; $('sort').className = state.sortBySize ? 'on' : ''; renderTree(); renderPane(); };
     $('expand').onclick = function () { var all = function (it) { state.open[it.path] = true; it.children.forEach(all); }; all(root()); renderTree(); };
     $('collapse').onclick = function () { state.open = {}; renderTree(); };
     document.addEventListener('keydown', function (ev) {
@@ -705,7 +723,7 @@ prompt: tools, then system, then messages.</footer>
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run", nargs="?", default="captures/latest", help="capture run directory")
-    parser.add_argument("-o", "--out", help="output file. Default <run>/profile.html")
+    parser.add_argument("-o", "--out", help="output file. Default <run>/context_profiler.html")
     args = parser.parse_args()
 
     run_dir = Path(args.run)
@@ -724,7 +742,7 @@ def main() -> int:
 
     exchanges = build_exchanges(calls)
     profile = build_profile(exchanges)
-    out = Path(args.out) if args.out else run_dir / "profile.html"
+    out = Path(args.out) if args.out else run_dir / "context_profiler.html"
     out.write_text(render_page(run_dir.resolve(), exchanges, profile, meta), encoding="utf-8")
     print(f"profile: {len(exchanges)} requests -> {out}")
     return 0

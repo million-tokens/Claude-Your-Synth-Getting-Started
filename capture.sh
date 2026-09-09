@@ -4,7 +4,7 @@
 #
 # "start" runs a proxy that records the wire traffic between Claude Code and the
 # Anthropic API. "render" turns a recording into two HTML pages: what changed
-# between calls (index.html) and what one call is made of (profile.html).
+# between calls (index.html) and what one call is made of (context_profiler.html).
 #
 # The transcript that Claude Code writes to ~/.claude/projects holds the
 # conversation, but not the system prompt, the tool schemas or the cache
