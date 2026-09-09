@@ -3,7 +3,8 @@
 # See what the session actually sent to the model.
 #
 # "start" runs a proxy that records the wire traffic between Claude Code and the
-# Anthropic API. "render" turns a recording into one HTML page.
+# Anthropic API. "render" turns a recording into two HTML pages: what changed
+# between calls (index.html) and what one call is made of (profile.html).
 #
 # The transcript that Claude Code writes to ~/.claude/projects holds the
 # conversation, but not the system prompt, the tool schemas or the cache
@@ -22,7 +23,7 @@ Usage: ./capture.sh <command> [options]
 
 Commands:
   start              record a session. Runs until Ctrl-C.
-  render [RUN]       render a recording to HTML. Default: the newest one.
+  render [RUN]       render a recording to HTML, two pages. Default: the newest one.
   list               list the recordings.
 
 Options:
@@ -85,6 +86,7 @@ cmd_render() {
         run="$(newest_run)"
     fi
     python3 "${SCRIPT_DIR}/capture/render.py" "${run}"
+    python3 "${SCRIPT_DIR}/capture/profile.py" "${run}"
     open_page "${run}/index.html"
 }
 

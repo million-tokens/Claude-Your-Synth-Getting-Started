@@ -525,7 +525,8 @@ def render_page(run_dir: Path, exchanges: list[dict], other: list[dict], meta: d
 <body><main>
 <h1>What the model received</h1>
 <p class="sub">{esc(run_dir)} &middot; started {esc(started)} &middot;
-upstream {esc(meta.get("upstream", "?"))} &middot; rendered {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+upstream {esc(meta.get("upstream", "?"))} &middot; rendered {datetime.now().strftime("%Y-%m-%d %H:%M")} &middot;
+<a href="profile.html">what the prompt is made of</a></p>
 {render_totals(exchanges)}
 <h2>Requests</h2>
 <p class="sub"><code>prompt_in</code> is the whole prompt of that call. <code>fresh</code> is what the

@@ -254,13 +254,15 @@ agent-deck -p synth-workshop                      # terminal 2: work as usual
 ```
 
 `start` runs until Ctrl-C and writes one JSON file per API call into `captures/<timestamp>/`.
-`render` turns a recording into a single `captures/<timestamp>/index.html` and opens it. Inside a
-session, the `/capture` command renders the current recording.
+`render` turns a recording into two pages in `captures/<timestamp>/` and opens the first:
+`index.html`, what changed between calls, and `profile.html`, what one call is made of. Each page
+links to the other. Inside a session, the `/capture` command renders the current recording.
 
 ```
 capture.sh          # start | render | list
 capture/proxy.py    # the recorder. Forwards to the API, keeps a copy
-capture/render.py   # the reader. Recording -> one HTML page
+capture/render.py   # the reader. Recording -> index.html, the diff between calls
+capture/profile.py  # the profiler. Recording -> profile.html, the parts of one call
 captures/           # the recordings. Stays out of git
 ```
 
@@ -311,6 +313,52 @@ what you are billed for:
 
 A low cache hit rate makes a session expensive. The summary line at the top gives the rate, the
 largest prompt of the run and the totals.
+
+### The context profile
+
+`profile.html` is a profiler for the prompt. Pick a request at the top; the tree on the left is
+that request broken into its parts, the pane on the right is the content of the part you selected.
+
+```
+request 7                          58,342 tokens
+├─ system                           4,040   7%
+│  ├─ billing header                   28
+│  ├─ You are a Claude agent…          39   ▮ cache
+│  └─ Claude Code system prompt     3,972   ▮ cache
+│     ├─ Doing tasks                  916
+│     └─ …
+├─ tools                           43,905  75%
+│  ├─ Bash                          3,196
+│  └─ …
+├─ messages                        10,258  18%
+│  ├─ 0 user: system-reminder: CLAUDE.md, skills listing, …
+│  └─ 2 user: tool_result Read      5,747
+└─ answer                             130  (output)
+```
+
+- **The parts.** The system prompt splits into its blocks, and each block into its top-level
+  headings and `<tag>` blocks. The tools split into one row per tool. The messages split into
+  turns, and each turn into its content blocks: text, `tool_use`, `tool_result`, replayed
+  `thinking`. Known pieces are labelled: `CLAUDE.md`, the skills listing, the git status, a
+  `system-reminder`. Everything else carries its first line.
+- **The sizes.** Every row shows its estimated tokens and its share of the request; the bar is the
+  share. Hover the number for the characters. The API counts tokens for the request as a whole and
+  for nothing smaller, so the per-part number is an estimate: the characters of the request divided
+  by the real `input_tokens` gives a chars-per-token ratio, applied to every part. The parts add
+  up to the real total, and the request row shows the ratio it used.
+- **Thinking.** Claude Code asks the API to omit the thinking text, so the recording holds a
+  signature and no words. What `output_tokens` counts beyond the visible answer is thinking, and
+  the answer's thinking row gets it. The same thinking rides back into every later request as a
+  content block, which is where its replayed cost shows.
+- **Cache segments.** A `cache` marker sits on the row that ends a cache segment, and every row
+  says which segment it belongs to. The API hashes tools first, then system, then messages, so the
+  segments are numbered in that order. A part in segment 1 is cached as long as nothing before it
+  changes; a part after the last breakpoint is sent fresh every call.
+- **Moving around.** Left and right arrow keys step through the requests. The selection stays on
+  the same part, so you can watch one tool result or one system block from call to call. "Sort by
+  size" orders every level by cost instead of wire order.
+
+The answer of call N is the last row, set apart, because it becomes part of the prompt of call N+1.
 
 ### Options and limits
 
