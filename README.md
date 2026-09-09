@@ -155,26 +155,19 @@ git push origin --delete lesson-01-oscillator
 The workshop runs on a separate Claude Code configuration. Your own settings, skills, hooks and
 session history stay in `~/.claude`. The workshop does not read them and does not change them.
 
-[Agent Deck](https://github.com/asheshgoplani/agent-deck) supplies the mechanism. A named profile
-points Claude Code at a different configuration directory. `workshop.sh` makes the profile for you:
+`CLAUDE_CONFIG_DIR` supplies the mechanism. It is a Claude Code variable that names the directory
+holding the settings, skills, hooks, sign-in and session history, and `~/.claude` is only its
+default. `workshop.sh` makes a directory for the workshop and starts every session with the
+variable pointed at it:
 
 ```bash
-./workshop.sh profile setup    # make the workshop profile and its configuration
-./workshop.sh profile status   # show which configuration the profile uses
-./workshop.sh profile remove   # delete the profile and its configuration
+./workshop.sh profile setup    # make the workshop configuration
+./workshop.sh profile status   # show the configuration and the recorder state
+./workshop.sh profile remove   # delete the configuration
 ```
 
-`setup` does four things. It makes the directory `~/claude-synth-workshop/claude-config`. It adds
-the profile to Agent Deck. It adds this block to `~/.config/agent-deck/config.toml`, after it copies
-that file to `config.toml.workshop-bak`:
-
-```toml
-[profiles.synth-workshop.claude]
-config_dir = "/Users/you/claude-synth-workshop/claude-config"
-```
-
-Then it installs the Agent Deck hooks into the new configuration and prints the result. Run `setup`
-again at any time. It changes nothing that is already correct.
+`setup` makes the directory `~/claude-synth-workshop/claude-config` and prints the result. Run it
+again at any time. It changes nothing that is already there.
 
 To start the workshop:
 
@@ -182,21 +175,19 @@ To start the workshop:
 ./workshop.sh claude
 ```
 
-This is `agent-deck -p synth-workshop`, and any argument after `claude` passes straight through. It
-also records the session: it starts the capture proxy, sets `ANTHROPIC_BASE_URL` to it for that
-session only, and stops it again when you quit. See "See what the model actually received" below.
-Agent Deck stays the launcher, because the profile carries the isolated configuration and the hooks
-that `profile setup` installed.
+This is `claude` with `CLAUDE_CONFIG_DIR` set to the workshop directory for that session only, and
+any argument after `claude` passes straight through. It also records the session: it starts the
+capture proxy, sets `ANTHROPIC_BASE_URL` to it, and stops it again when you quit. See "See what
+the model actually received" below.
 
-The first Claude session in the new profile starts logged out, because the sign-in record lives in
-the configuration directory. Run `claude auth login` once inside the session.
+The first Claude session on the new configuration starts logged out, because the sign-in record
+lives in the configuration directory. Run `claude auth login` once inside the session.
 
-To go back to your own setup, start Agent Deck without the option. Nothing else is necessary,
-because the script deletes nothing from `~/.claude`.
+To go back to your own setup, start `claude` as usual. Nothing else is necessary, because the
+script deletes nothing from `~/.claude`.
 
 These environment variables change the target:
 
-- `WORKSHOP_PROFILE` - the name of the Agent Deck profile. Default: `synth-workshop`.
 - `WORKSHOP_HOME` - the directory of the workshop configuration. Default: `~/claude-synth-workshop`.
 - `WORKSHOP_CAPTURE` - set to `0` to start the session without recording it. Default: `1`.
 - `WORKSHOP_CAPTURE_DIR` - where the recordings go. Default: `./captures`.
@@ -210,9 +201,9 @@ These environment variables change the target:
 ./workshop.sh claude
 ```
 
-That is `agent-deck -p synth-workshop`, with the session recorded. Any argument after `claude` goes
-on to Agent Deck. To start a session without a recording, run `agent-deck -p synth-workshop`
-yourself, or set `WORKSHOP_CAPTURE=0`. The next section says what the recording is for.
+That is `claude` on the workshop configuration, with the session recorded. Any argument after
+`claude` goes on to Claude Code. To start a session without a recording, set `WORKSHOP_CAPTURE=0`.
+The next section says what the recording is for.
 
 ---
 
@@ -231,8 +222,8 @@ the requests.
 `capture.sh` does that with a proxy. Claude Code sends its requests to whatever `ANTHROPIC_BASE_URL`
 names, so a local proxy in front of the API sees every byte.
 
-**`./workshop.sh claude` does this for you.** It says which profile and configuration the session
-uses, starts the recorder, points the session at it, stops it when you quit, and tells you where
+**`./workshop.sh claude` does this for you.** It says which configuration the session uses,
+starts the recorder, points the session at it, stops it when you quit, and tells you where
 the recording is:
 
 ```bash
@@ -250,7 +241,7 @@ To record a session that you start yourself, run the two halves by hand:
 ```bash
 ./capture.sh start                                # terminal 1: the recorder
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 2
-agent-deck -p synth-workshop                      # terminal 2: work as usual
+CLAUDE_CONFIG_DIR=~/claude-synth-workshop/claude-config claude   # terminal 2: work as usual
 ./capture.sh render                               # after the session: the page
 ```
 
