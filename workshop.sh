@@ -501,14 +501,23 @@ cmd_claude() {
     deck_profile_exists ||
         die "No workshop profile \"${PROFILE_NAME}\" yet. Run: ./workshop.sh profile setup"
 
+    printf 'Profile:   %s\n' "${PROFILE_NAME}"
+    printf 'Config:    %s\n' "$(resolved_config_file)"
+
     # Without a recording there is nothing to clean up afterwards, so hand the
     # process over to Agent Deck and keep this script out of the way.
     if ! start_capture; then
+        if capture_available; then
+            printf 'Recording: none, see the warning above\n\n'
+        else
+            printf 'Recording: %s\n\n' "$(capture_status_line)"
+        fi
         exec agent-deck -p "${PROFILE_NAME}" "$@"
     fi
 
     trap stop_capture EXIT INT TERM
-    printf 'Recording this session on port %s. Nothing else about the session changes.\n' "${CAPTURE_PORT}"
+    printf 'Recording: capture proxy started on http://127.0.0.1:%s, writing to %s\n' "${CAPTURE_PORT}" "${CAPTURE_DIR}"
+    printf 'Nothing else about the session changes.\n\n'
 
     ANTHROPIC_BASE_URL="http://127.0.0.1:${CAPTURE_PORT}" \
         agent-deck -p "${PROFILE_NAME}" "$@" || status=$?

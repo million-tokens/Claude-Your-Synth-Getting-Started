@@ -231,8 +231,9 @@ the requests.
 `capture.sh` does that with a proxy. Claude Code sends its requests to whatever `ANTHROPIC_BASE_URL`
 names, so a local proxy in front of the API sees every byte.
 
-**`./workshop.sh claude` does this for you.** It starts the recorder, points the session at it, stops
-it when you quit, and tells you where the recording is:
+**`./workshop.sh claude` does this for you.** It says which profile and configuration the session
+uses, starts the recorder, points the session at it, stops it when you quit, and tells you where
+the recording is:
 
 ```bash
 ./workshop.sh claude      # work as usual. The session is recorded.
