@@ -177,8 +177,9 @@ To start the workshop:
 
 This is `claude` with `CLAUDE_CONFIG_DIR` set to the workshop directory for that session only, and
 any argument after `claude` passes straight through. It also records the session: it starts the
-capture proxy, sets `ANTHROPIC_BASE_URL` to it, and stops it again when you quit. See "See what
-the model actually received" below.
+capture proxy, sets `ANTHROPIC_BASE_URL` to it, opens the recording in your browser at the first
+API call, and stops everything again when you quit. See "See what the model actually received"
+below.
 
 The first Claude session on the new configuration starts logged out, because the sign-in record
 lives in the configuration directory. Run `claude auth login` once inside the session.
@@ -192,6 +193,7 @@ These environment variables change the target:
 - `WORKSHOP_CAPTURE` - set to `0` to start the session without recording it. Default: `1`.
 - `WORKSHOP_CAPTURE_DIR` - where the recordings go. Default: `./captures`.
 - `WORKSHOP_CAPTURE_PORT` - the first port the recorder tries. Default: `8788`.
+- `WORKSHOP_VIEWER` - set to `0` to record without the live page in the browser. Default: `1`.
 
 ---
 
@@ -202,8 +204,20 @@ These environment variables change the target:
 ```
 
 That is `claude` on the workshop configuration, with the session recorded. Any argument after
-`claude` goes on to Claude Code. To start a session without a recording, set `WORKSHOP_CAPTURE=0`.
-The next section says what the recording is for.
+`claude` goes on to Claude Code. The recording opens in your browser at the first API call and
+follows the session. To start a session without a recording, set `WORKSHOP_CAPTURE=0`; to record
+without the browser page, set `WORKSHOP_VIEWER=0`. The next section says what the recording is for.
+
+To record a session on your **own** configuration instead, run:
+
+```bash
+./workshop.sh claude-own
+```
+
+That is plain `claude`, on `~/.claude` (or whatever `CLAUDE_CONFIG_DIR` already names), with the
+same recorder in front of it. Nothing is isolated. Run one session of each, then render both:
+the two recordings show what your own settings, skills and MCP servers add to every request that
+the clean workshop configuration does not carry.
 
 ---
 
@@ -223,44 +237,57 @@ the requests.
 names, so a local proxy in front of the API sees every byte.
 
 **`./workshop.sh claude` does this for you.** It says which configuration the session uses,
-starts the recorder, points the session at it, stops it when you quit, and tells you where
-the recording is:
+starts the recorder, points the session at it, and starts a viewer next to it. At the first API
+call the viewer opens the recording in your browser, and from then on the page follows the session:
+each call that completes appears on it a second later. When you quit, the script stops both and
+saves the pages into the recording, so that you can open them again later:
 
 ```bash
-./workshop.sh claude      # work as usual. The session is recorded.
-./capture.sh render       # afterwards: the page
+./workshop.sh claude      # work as usual. The session is recorded and shown as it goes.
 ```
+
+`./workshop.sh claude-own` records in the same way, on your own configuration. It exists for the
+comparison: the same prompt on the clean workshop configuration and on your everyday one, side by
+side in `./capture.sh list`.
 
 Recording is best effort. If the recorder cannot start — no `python3`, no free port, nowhere to
 write — the script says so and starts the session anyway. A broken recorder never costs you a
-session. `WORKSHOP_CAPTURE=0` turns it off, and `./workshop.sh profile status` shows the current
-state.
+session, and a broken viewer costs you a page in the browser and nothing else. `WORKSHOP_CAPTURE=0`
+turns the recording off, `WORKSHOP_VIEWER=0` turns only the browser page off, and
+`./workshop.sh profile status` shows the current state.
 
-To record a session that you start yourself, run the two halves by hand:
+To record a session that you start yourself, run the parts by hand:
 
 ```bash
 ./capture.sh start                                # terminal 1: the recorder
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 2
-CLAUDE_CONFIG_DIR=~/claude-synth-workshop/claude-config claude   # terminal 2: work as usual
-./capture.sh render                               # after the session: the page
+./capture.sh view                                 # terminal 2: the page, opens at the first call
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 3
+CLAUDE_CONFIG_DIR=~/claude-synth-workshop/claude-config claude   # terminal 3: work as usual
 ```
 
 `start` runs until Ctrl-C and writes one JSON file per API call into `captures/<timestamp>/`.
-`render` turns a recording into two pages in `captures/<timestamp>/` and opens the first:
-`index.html`, what changed between calls, and `context_profiler.html`, what one call is made of. Each page
-links to the other. Inside a session, the `/capture` command renders the current recording.
+`view` serves that recording on a local port as two pages, rebuilt whenever a call lands, and
+writes them into `captures/<timestamp>/` when it stops: `index.html`, what changed between calls,
+and `context_profiler.html`, what one call is made of. Each page links to the other. `render`
+writes the same two pages from a recording without a viewer, and inside a session the `/capture`
+command does that for the current recording.
 
 ```
-capture.sh          # start | render | list
+capture.sh          # start | view | render | list
 capture/proxy.py    # the recorder. Forwards to the API, keeps a copy
+capture/serve.py    # the viewer. Serves the recording as a page that follows the session
 capture/render.py   # the reader. Recording -> index.html, the diff between calls
 capture/profile.py  # the profiler. Recording -> context_profiler.html, the parts of one call
 captures/           # the recordings. Stays out of git
 ```
 
-The two halves are separate on purpose. The proxy sits in the critical path of your session, so it
+The parts are separate on purpose. The proxy sits in the critical path of your session, so it
 parses nothing and decides nothing: it moves bytes and drops a copy on disk. Everything that could
-be wrong or slow lives in `render.py`, which runs afterwards over the files.
+be wrong or slow lives in `render.py` and `profile.py`, which the viewer runs over the files in a
+process of its own. The page in the browser polls the viewer once a second and reloads itself when
+a call has landed; it keeps the request and the part you were looking at, and stays on the newest
+request if that is where you were. When the viewer is gone, the page says so and names the saved
+copy.
 
 ### What the page shows
 
@@ -358,13 +385,17 @@ The answer of call N is the last row, set apart, because it becomes part of the 
 ```bash
 ./capture.sh start -p 9000        # another port
 ./capture.sh list                 # the recordings
+./capture.sh view <dir>           # a named recording, live, on port 8790
 ./capture.sh render <dir> -O      # a named recording, do not open a browser
 ```
 
-- `CAPTURE_PORT`, `CAPTURE_DIR` and `CAPTURE_UPSTREAM` set the same things from the environment.
-  Through `workshop.sh` the names are `WORKSHOP_CAPTURE`, `WORKSHOP_CAPTURE_PORT` and
-  `WORKSHOP_CAPTURE_DIR`. A busy port is not an error: the recorder walks forward until it finds a
-  free one.
+- `CAPTURE_PORT`, `CAPTURE_VIEW_PORT`, `CAPTURE_DIR` and `CAPTURE_UPSTREAM` set the same things
+  from the environment. Through `workshop.sh` the names are `WORKSHOP_CAPTURE`, `WORKSHOP_VIEWER`,
+  `WORKSHOP_CAPTURE_PORT` and `WORKSHOP_CAPTURE_DIR`. A busy port is not an error: `workshop.sh`
+  walks forward until it finds a free one, and puts the viewer on the next free port after the
+  recorder.
+- The viewer serves the recording over HTTP on `127.0.0.1` only. That is the same exposure as the
+  files on disk, to the programs on your machine and nobody else.
 - The proxy asks the API for uncompressed responses, so that the recording is readable text. That
   costs some bandwidth on the way in and nothing else.
 - Credentials are never written: the recording stores `authorization` and `x-api-key` as

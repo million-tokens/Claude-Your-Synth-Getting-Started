@@ -665,17 +665,42 @@ JS = r"""
         var parts = state.path.split('/');
         for (var i = 1; i < parts.length; i++) state.open[parts.slice(0, i).join('/')] = true;
         renderPicker(); renderTree(); renderPane();
+        persist();
     }
 
-    $('sort').onclick = function () { state.sortBySize = !state.sortBySize; state.paneSort = null; $('sort').className = state.sortBySize ? 'on' : ''; renderTree(); renderPane(); };
-    $('expand').onclick = function () { var all = function (it) { state.open[it.path] = true; it.children.forEach(all); }; all(root()); renderTree(); };
-    $('collapse').onclick = function () { state.open = {}; renderTree(); };
+    // The live viewer reloads the page when a call lands. Keep the selection
+    // across that reload, and stay on the newest request if that is where the
+    // reader was.
+    var storeKey = 'profile:' + document.title;
+    function persist() {
+        try {
+            sessionStorage.setItem(storeKey, JSON.stringify({
+                req: state.req, atEnd: state.req === requests.length - 1, path: state.path,
+                sortBySize: state.sortBySize, open: state.open
+            }));
+        } catch (e) { /* no storage: the page still works, it just forgets */ }
+    }
+    function restore() {
+        try { return JSON.parse(sessionStorage.getItem(storeKey)); } catch (e) { return null; }
+    }
+
+    $('sort').onclick = function () { state.sortBySize = !state.sortBySize; state.paneSort = null; $('sort').className = state.sortBySize ? 'on' : ''; renderTree(); renderPane(); persist(); };
+    $('expand').onclick = function () { var all = function (it) { state.open[it.path] = true; it.children.forEach(all); }; all(root()); renderTree(); persist(); };
+    $('collapse').onclick = function () { state.open = {}; renderTree(); persist(); };
     document.addEventListener('keydown', function (ev) {
         if (ev.target.tagName === 'INPUT') return;
         if (ev.key === 'ArrowRight' && state.req < requests.length - 1) select(state.req + 1, state.path);
         if (ev.key === 'ArrowLeft' && state.req > 0) select(state.req - 1, state.path);
     });
-    select(0, 'request');
+    var saved = restore();
+    if (saved) {
+        state.sortBySize = !!saved.sortBySize;
+        $('sort').className = state.sortBySize ? 'on' : '';
+        state.open = saved.open || {};
+        select(saved.atEnd ? requests.length - 1 : Math.min(saved.req || 0, requests.length - 1), saved.path || 'request');
+    } else {
+        select(0, 'request');
+    }
 })();
 """
 

@@ -310,8 +310,23 @@ document.querySelectorAll('[data-toggle]').forEach(function (btn) {
     btn.addEventListener('click', function () {
         var open = btn.dataset.toggle === 'open';
         document.querySelectorAll('details.card').forEach(function (d) { d.open = open; });
+        persist();
     });
 });
+// The live viewer reloads the page when a call lands. Remember which cards the
+// reader opened or closed, so that the reload does not fold them back.
+var storeKey = 'cards:' + document.title;
+function persist() {
+    var open = {};
+    document.querySelectorAll('details.card').forEach(function (d) { open[d.id] = d.open; });
+    try { sessionStorage.setItem(storeKey, JSON.stringify(open)); } catch (e) { /* no storage */ }
+}
+(function () {
+    var open;
+    try { open = JSON.parse(sessionStorage.getItem(storeKey)); } catch (e) { open = null; }
+    if (open) document.querySelectorAll('details.card').forEach(function (d) { if (d.id in open) d.open = open[d.id]; });
+    document.querySelectorAll('details.card').forEach(function (d) { d.addEventListener('toggle', persist); });
+})();
 """
 
 

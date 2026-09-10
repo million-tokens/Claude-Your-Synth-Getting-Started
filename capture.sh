@@ -15,6 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAPTURE_DIR="${CAPTURE_DIR:-${SCRIPT_DIR}/captures}"
 CAPTURE_PORT="${CAPTURE_PORT:-8788}"
+VIEW_PORT="${CAPTURE_VIEW_PORT:-8790}"
 OPEN_BROWSER=1
 
 usage() {
@@ -24,20 +25,26 @@ Usage: ./capture.sh <command> [options]
 Commands:
   start              record a session. Runs until Ctrl-C.
   render [RUN]       render a recording to HTML, two pages. Default: the newest one.
+  view [RUN]         serve a recording as a page that follows the session, and
+                     open it at the first call. Runs until Ctrl-C, then writes
+                     the two pages. Default: the newest recording.
   list               list the recordings.
 
 Options:
-  -p PORT            port of the proxy. Default 8788, or CAPTURE_PORT.
+  -p PORT            port of the proxy (default 8788, or CAPTURE_PORT), or of
+                     the viewer (default 8790, or CAPTURE_VIEW_PORT).
   -d DIR             directory of the recordings. Default ./captures, or CAPTURE_DIR.
-  -O                 render: do not open the page in a browser.
+  -O                 render, view: do not open the page in a browser.
   -h                 this help.
 
-Typical run, in two terminals:
+Typical run, in three terminals:
 
   ./capture.sh start                                # terminal 1
-  export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 2
-  claude                                            # terminal 2
-  ./capture.sh render                               # after the session
+  ./capture.sh view                                 # terminal 2: the live page
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 3
+  claude                                            # terminal 3
+
+"./workshop.sh claude" does all of that in one command.
 
 The recording holds your prompts and the answers of the model, so treat it like
 the rest of the session. Credentials are not recorded. "captures/" stays out of
@@ -90,6 +97,19 @@ cmd_render() {
     open_page "${run}/index.html"
 }
 
+cmd_view() {
+    require_python
+    local run="${1:-}"
+    if [[ -z "${run}" ]]; then
+        run="$(newest_run)"
+    fi
+    local open=()
+    if [[ "${OPEN_BROWSER}" -eq 1 ]]; then
+        open=(--open)
+    fi
+    exec python3 "${SCRIPT_DIR}/capture/serve.py" "${run}" --port "${VIEW_PORT}" ${open[@]+"${open[@]}"}
+}
+
 cmd_list() {
     if [[ ! -d "${CAPTURE_DIR}" ]]; then
         echo "capture: no recordings yet"
@@ -111,6 +131,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -p)
             CAPTURE_PORT="$2"
+            VIEW_PORT="$2"
             shift 2
             ;;
         -d)
@@ -139,6 +160,7 @@ done
 case "${COMMAND}" in
     start) cmd_start ;;
     render) cmd_render "${POSITIONAL:-}" ;;
+    view) cmd_view "${POSITIONAL:-}" ;;
     list) cmd_list ;;
     -h | --help | "") usage ;;
     *)
