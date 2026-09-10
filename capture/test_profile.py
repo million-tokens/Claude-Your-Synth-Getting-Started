@@ -130,6 +130,18 @@ class Tree(unittest.TestCase):
         self.assertEqual(sum(c["tok"] for c in answer["children"]), 500)
         self.assertGreater(answer["children"][0]["hidden_tok"], 400)
 
+    def test_hidden_thinking_without_a_thinking_block(self):
+        # The API counted more output than the visible answer explains and the
+        # answer carries no thinking block: the node for it is created here.
+        record = request([{"role": "user", "content": "hi"}], usage={"input_tokens": 10, "output_tokens": 500})
+        record["response_json"]["content"] = [{"type": "text", "text": "ok"}]
+        root = self.build([record])[0]
+        answer = root["children"][-1]
+        thinking = answer["children"][0]
+        self.assertEqual(thinking["label"], "thinking (not in the recording)")
+        self.assertEqual(thinking["tok"], thinking["hidden_tok"])
+        self.assertEqual(sum(c["tok"] for c in answer["children"]), 500)
+
     def test_content_is_stored_once(self):
         text = "same text in every request " * 20
         first = request([{"role": "user", "content": text}], usage={"input_tokens": 10}, index=1)

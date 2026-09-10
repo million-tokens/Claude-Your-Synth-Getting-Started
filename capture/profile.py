@@ -324,6 +324,7 @@ def estimate_answer(answer: dict, output_tokens: int, chars_per_token: float) ->
         if thinking is None:
             thinking = node("thinking (not in the recording)", "thinking", 0, ["answer", "thinking"], Store())
             thinking["text"] = None
+            thinking["tok"] = 0  # created after estimate() ran, so it has no estimate yet
             answer["children"].insert(0, thinking)
         thinking["tok"] += hidden
         thinking["hidden_tok"] = hidden
