@@ -166,8 +166,12 @@ variable pointed at it:
 ./workshop.sh profile remove   # delete the configuration
 ```
 
-`setup` makes the directory `~/claude-synth-workshop/claude-config` and prints the result. Run it
-again at any time. It changes nothing that is already there.
+`setup` makes the directory `~/claude-synth-workshop/claude-config` with a `settings.json` that
+keeps the prompt to what the workshop needs. Claude Code adds the claude.ai connectors of the
+signed-in account (Gmail, Google Calendar and the like) to every session as MCP servers, and
+offers the Artifact tool, whose description alone is a fifth of the tool text. The settings switch
+both off. Run `setup` again at any time. It changes nothing that is already there, and says so if
+an existing `settings.json` lacks these settings.
 
 To start the workshop:
 

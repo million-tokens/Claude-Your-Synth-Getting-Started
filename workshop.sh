@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 WORKSHOP_HOME="${WORKSHOP_HOME:-${HOME}/claude-synth-workshop}"
 PROFILE_CONFIG_DIR="${WORKSHOP_HOME}/claude-config"
+PROFILE_SETTINGS="${PROFILE_CONFIG_DIR}/settings.json"
 
 WORKSHOP_CAPTURE="${WORKSHOP_CAPTURE:-1}"
 CAPTURE_PROXY="${SCRIPT_DIR}/capture/proxy.py"
@@ -446,6 +447,33 @@ cmd_profile_status() {
     printf 'The workshop configuration is isolated. Your own ~/.claude is untouched.\n'
 }
 
+# The settings that keep the workshop prompt to what the workshop needs. Claude
+# Code adds the claude.ai connectors of the signed-in account (Gmail, Google
+# Calendar and the like) to every session as MCP servers, and offers the
+# Artifact tool, whose description alone is a fifth of the tool text. Neither
+# belongs in the workshop, and both are switched off here.
+#
+# A settings.json that is already there is left alone, like everything else in
+# the configuration. If it lacks these settings, the script says so.
+write_profile_settings() {
+    if [[ -e "${PROFILE_SETTINGS}" ]]; then
+        if ! grep -q disableClaudeAiConnectors "${PROFILE_SETTINGS}" || ! grep -q '"Artifact"' "${PROFILE_SETTINGS}"; then
+            warn "${PROFILE_SETTINGS} is already there and does not switch off the claude.ai connectors" \
+                "and the Artifact tool. Add \"disableClaudeAiConnectors\": true and \"permissions\": {\"deny\": [\"Artifact\"]}" \
+                "to it, or remove the configuration and set it up again."
+        fi
+        return 0
+    fi
+    cat >"${PROFILE_SETTINGS}" <<'SETTINGS'
+{
+  "disableClaudeAiConnectors": true,
+  "permissions": {
+    "deny": ["Artifact"]
+  }
+}
+SETTINGS
+}
+
 cmd_profile_setup() {
     require_claude
 
@@ -455,6 +483,7 @@ cmd_profile_setup() {
         printf 'Making the workshop configuration %s ...\n' "${PROFILE_CONFIG_DIR}"
         mkdir -p "${PROFILE_CONFIG_DIR}"
     fi
+    write_profile_settings
 
     cmd_profile_status
     print_launch_help
