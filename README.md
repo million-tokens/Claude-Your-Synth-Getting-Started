@@ -18,6 +18,7 @@ test.sh                    # builds and runs the tests
 workshop.sh                # moves the checkout between the lesson tags, sets up the Claude profile
 capture.sh                 # records what a session sends to the model, renders it as HTML
 capture/                   # the proxy and the renderer behind capture.sh
+claude-config/statusline.py # the status line that profile setup installs
 src/Main.cpp               # entry point
 tests/CMakeLists.txt       # fetches Catch2 v3, defines the MiniSynthTests target
 tests/ProductNameTest.cpp  # smoke test: the product name macro is "MiniSynth"
@@ -170,8 +171,19 @@ variable pointed at it:
 keeps the prompt to what the workshop needs. Claude Code adds the claude.ai connectors of the
 signed-in account (Gmail, Google Calendar and the like) to every session as MCP servers, and
 offers the Artifact tool, whose description alone is a fifth of the tool text. The settings switch
-both off. Run `setup` again at any time. It changes nothing that is already there, and says so if
-an existing `settings.json` lacks these settings.
+both off. They also turn on a status line under the input box:
+
+```
+Claude-Your-Synth-Getting-Started (my-synth) in 12.4k out 1.8k ctx 14.2k $0.42
+```
+
+`in` and `out` are the tokens of the most recent API response, so `ctx` is the size of the context
+right now, and it turns red past 200k. The cost adds up the whole session. The script behind it is
+`claude-config/statusline.py`; `setup` copies it into the configuration, so that `reset` to an older
+tag does not take it away. It needs `python3`.
+
+Run `setup` again at any time. It changes nothing that is already there, and says so if an existing
+`settings.json` lacks these settings.
 
 To start the workshop:
 

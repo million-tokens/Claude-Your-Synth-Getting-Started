@@ -15,6 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSHOP_HOME="${WORKSHOP_HOME:-${HOME}/claude-synth-workshop}"
 PROFILE_CONFIG_DIR="${WORKSHOP_HOME}/claude-config"
 PROFILE_SETTINGS="${PROFILE_CONFIG_DIR}/settings.json"
+STATUSLINE_SOURCE="${SCRIPT_DIR}/claude-config/statusline.py"
+PROFILE_STATUSLINE="${PROFILE_CONFIG_DIR}/statusline.py"
 
 WORKSHOP_CAPTURE="${WORKSHOP_CAPTURE:-1}"
 CAPTURE_PROXY="${SCRIPT_DIR}/capture/proxy.py"
@@ -453,22 +455,43 @@ cmd_profile_status() {
 # Artifact tool, whose description alone is a fifth of the tool text. Neither
 # belongs in the workshop, and both are switched off here.
 #
-# A settings.json that is already there is left alone, like everything else in
-# the configuration. If it lacks these settings, the script says so.
+# The settings also turn on the status line of the workshop: the context size
+# and the session cost under the input box. The script is copied into the
+# configuration rather than named in the checkout, because "workshop.sh reset"
+# can move the checkout to a tag that does not have it.
+#
+# A settings.json or a status line script that is already there is left alone,
+# like everything else in the configuration. If the settings lack any of this,
+# the script says so.
 write_profile_settings() {
+    if [[ ! -e "${PROFILE_STATUSLINE}" ]]; then
+        cp "${STATUSLINE_SOURCE}" "${PROFILE_STATUSLINE}"
+    fi
+    command -v python3 >/dev/null 2>&1 ||
+        warn "python3 is not installed, so the status line of the workshop stays empty."
+
     if [[ -e "${PROFILE_SETTINGS}" ]]; then
         if ! grep -q disableClaudeAiConnectors "${PROFILE_SETTINGS}" || ! grep -q '"Artifact"' "${PROFILE_SETTINGS}"; then
             warn "${PROFILE_SETTINGS} is already there and does not switch off the claude.ai connectors" \
                 "and the Artifact tool. Add \"disableClaudeAiConnectors\": true and \"permissions\": {\"deny\": [\"Artifact\"]}" \
                 "to it, or remove the configuration and set it up again."
         fi
+        if ! grep -q statusLine "${PROFILE_SETTINGS}"; then
+            warn "${PROFILE_SETTINGS} is already there and has no status line. Add" \
+                "\"statusLine\": {\"type\": \"command\", \"command\": \"python3 '${PROFILE_STATUSLINE}'\"}" \
+                "to it, or remove the configuration and set it up again."
+        fi
         return 0
     fi
-    cat >"${PROFILE_SETTINGS}" <<'SETTINGS'
+    cat >"${PROFILE_SETTINGS}" <<SETTINGS
 {
   "disableClaudeAiConnectors": true,
   "permissions": {
     "deny": ["Artifact"]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "python3 '${PROFILE_STATUSLINE}'"
   }
 }
 SETTINGS
