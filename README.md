@@ -8,72 +8,46 @@ workshop.
 
 ## Architecture
 
-The project is deliberately small. One CMake target builds the application, a second one builds the
-tests.
-
 ```
-CMakeLists.txt             # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
-build.sh                   # configures, builds and runs the executable
-test.sh                    # builds and runs the tests
-workshop.sh                # moves the checkout between the lesson tags, sets up the Claude profile
-capture.sh                 # records what a session sends to the model, renders it as HTML
-capture/                   # the proxy and the renderer behind capture.sh
+CMakeLists.txt              # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
+build.sh                    # configures, builds and runs the executable
+test.sh                     # builds and runs the tests
+workshop.sh                 # moves the checkout between the lesson tags, sets up the Claude profile
+capture.sh                  # records what a session sends to the model, renders it as HTML
+capture/                    # the proxy, the viewer and the renderers behind capture.sh
 claude-config/statusline.py # the status line that profile setup installs
-src/Main.cpp               # entry point
-tests/CMakeLists.txt       # fetches Catch2 v3, defines the MiniSynthTests target
-tests/ProductNameTest.cpp  # smoke test: the product name macro is "MiniSynth"
-docs/                      # code guidelines for Claude Code
-CLAUDE.md                  # top-level brief for Claude Code
+src/Main.cpp                # entry point
+tests/                      # Catch2 v3 tests, the MiniSynthTests target
+docs/                       # code guidelines for Claude Code
+CLAUDE.md                   # top-level brief for Claude Code
 ```
 
 - **Build system:** CMake 3.22 or later.
 - **Dependencies:** CMake `FetchContent` downloads JUCE 8.0.4 and Catch2 v3.7.1 at configure time.
   You do not install them yourself. The first configure step takes some minutes.
 - **Targets:** `MiniSynth`, a console application, and `MiniSynthTests`, the test binary. Both
-  link `juce::juce_core` plus the JUCE recommended configuration and warning flags. The build
-  disables the JUCE web browser and cURL support.
+  link `juce::juce_core`.
 - **Standard:** C++20. CMake also writes `compile_commands.json` for clang-tidy and the editor.
 
 ---
 
-## Build and run
+## Build, run and test
 
 ```bash
-./build.sh
+./build.sh   # configure a Release build in build/, compile MiniSynth, run it
+./test.sh    # build MiniSynthTests in the same build/ directory, run the tests with ctest
 ```
 
-The script configures a Release build in `build/`, compiles the `MiniSynth` target with all
-available cores, then runs the executable. If the build gives no binary, the script prints a message
-and exits with an error. The script does not compile the tests.
-
----
-
-## Test
-
-```bash
-./test.sh
-```
-
-The script uses the same `build/` directory, so it reuses the JUCE download. It builds only the
-`MiniSynthTests` target, then runs the tests with `ctest`. CMake registers each Catch2 test case
-as a separate `ctest` test. If a test fails, `ctest` prints its output.
-
-To run the test binary directly, and to get the Catch2 command-line options, run:
-
-```bash
-./build/tests/MiniSynthTests --help
-```
-
-Add new test files to `tests/`, then list them in the `add_executable` command in
-`tests/CMakeLists.txt`.
+`build.sh` does not compile the tests. To get the Catch2 options, run
+`./build/tests/MiniSynthTests --help`. Add new test files to `tests/`, then list them in the
+`add_executable` command in `tests/CMakeLists.txt`.
 
 ---
 
 ## Workshop navigation
 
-`workshop.sh` moves your checkout between the lessons of the workshop. Each lesson is an annotated
-git tag in the upstream repository, for example `lesson-03-filter`. The tag message holds the lesson
-title.
+`workshop.sh` moves your checkout between the lessons. Each lesson is an annotated git tag in the
+upstream repository, for example `lesson-03-filter`.
 
 ```bash
 ./workshop.sh list                     # show the lesson tags
@@ -83,427 +57,132 @@ title.
 ./workshop.sh pull                     # get the latest fixes from upstream main
 ```
 
-Work on your own branch. The script refuses to change `main`, because `main` keeps your reference
-copy of the starter. To make a work branch, run:
-
-```bash
-git switch -c my-work
-```
+Work on your own branch, for example `git switch -c my-work`. The script refuses to change `main`,
+because `main` keeps your reference copy of the starter.
 
 `reset` discards local commits and uncommitted changes on the current branch. The script prints a
 warning and asks for confirmation first.
 
-The script needs SSH access to GitHub. It adds a temporary `upstream` remote, fetches, then removes
-the remote again. The lesson tags stay in your repository, so `git switch --detach lesson-03-filter`
-also works after the first run.
-
-Two environment variables change the source:
-
-- `WORKSHOP_UPSTREAM` - the upstream repository URL or a local path. Default: the workshop
-  repository over SSH.
-- `WORKSHOP_TAG_PREFIX` - the prefix that marks a lesson tag. Default: `lesson-`.
+The script needs SSH access to GitHub. After the first run, the lesson tags stay in your
+repository, so `git switch --detach lesson-03-filter` also works. `./workshop.sh -h` lists the
+environment variables that change the upstream and the tag prefix.
 
 ### For the workshop author: how to make a lesson
 
-The tags are the only thing that the workshop needs. A lesson branch is not necessary, because a tag
-keeps its commit alive on its own. Work with a detached HEAD, then push the tag alone:
+The workshop needs the tags and nothing else. Commit on a detached HEAD, then push the tag alone:
 
 ```bash
 git switch --detach main
-# ... write the code for lesson 01 ...
 git commit -am "Add a sine oscillator"
 git tag -a lesson-01-oscillator -m "Add a sine oscillator"
 git push origin lesson-01-oscillator
-
-# ... write the code for lesson 02 on top ...
-git commit -am "Add an ADSR envelope"
-git tag -a lesson-02-envelope -m "Add an ADSR envelope"
-git push origin lesson-02-envelope
-
-git switch main
 ```
 
-The repository keeps the tags and nothing else. No lesson branch appears in `git branch -a`, and
-`git log main` shows only the starter history.
-
-Two rules keep the menu correct:
-
-- Start every tag name with the prefix, then a zero-padded number. The menu sorts by tag name, so
-  `lesson-01` must come before `lesson-10`.
-- Use annotated tags (`git tag -a`). The script shows the tag message as the lesson title.
-
-To move a tag after a fix, force the update on both sides:
-
-```bash
-git tag -f -a lesson-01-oscillator -m "Add a sine oscillator"
-git push --force origin lesson-01-oscillator
-```
-
-The student gets the new position at the next `./workshop.sh reset`, because the script fetches the
-tags with a force refspec.
-
-To remove a lesson, delete the tag on both sides:
-
-```bash
-git tag -d lesson-01-oscillator
-git push origin --delete lesson-01-oscillator
-```
+- Start every tag name with `lesson-`, then a zero-padded number. The menu sorts by tag name.
+- Use annotated tags. The menu shows the tag message as the lesson title.
+- To move a tag, run `git tag -f -a ...`, then `git push --force origin <tag>`. The next `reset`
+  of a student gets the new position.
+- To remove a tag, run `git tag -d <tag>`, then `git push origin --delete <tag>`.
 
 ---
 
-## Isolated Claude configuration
+## Start Claude Code with the workshop profile
 
-The workshop runs on a separate Claude Code configuration. Your own settings, skills, hooks and
+The workshop uses a separate Claude Code configuration. Your own settings, skills, hooks and
 session history stay in `~/.claude`. The workshop does not read them and does not change them.
 
-`CLAUDE_CONFIG_DIR` supplies the mechanism. It is a Claude Code variable that names the directory
-holding the settings, skills, hooks, sign-in and session history, and `~/.claude` is only its
-default. `workshop.sh` makes a directory for the workshop and starts every session with the
-variable pointed at it:
-
 ```bash
-./workshop.sh profile setup    # make the workshop configuration
+./workshop.sh profile setup    # make the workshop configuration (run once)
+./workshop.sh claude           # start a recorded session on that configuration
 ./workshop.sh profile status   # show the configuration and the recorder state
 ./workshop.sh profile remove   # delete the configuration
 ```
 
-`setup` makes the directory `~/claude-synth-workshop/claude-config` with a `settings.json` that
-keeps the prompt to what the workshop needs. Claude Code adds the claude.ai connectors of the
-signed-in account (Gmail, Google Calendar and the like) to every session as MCP servers, and
-offers the Artifact tool, whose description alone is a fifth of the tool text. The settings switch
-both off. They also turn on a status line under the input box:
+`setup` makes `~/claude-synth-workshop/claude-config` with a `settings.json`. The settings switch
+off the claude.ai connectors and the Artifact tool, because these add much text to every prompt.
+The settings also install a status line under the input box:
 
 ```
 Claude-Your-Synth-Getting-Started (my-synth) in 12.4k out 1.8k ctx 14.2k $0.42
 ```
 
-`in` and `out` are the tokens of the most recent API response, so `ctx` is the size of the context
-right now, and it turns red past 200k. The cost adds up the whole session. The script behind it is
-`claude-config/statusline.py`; `setup` copies it into the configuration, so that `reset` to an older
-tag does not take it away. It needs `python3`.
+`ctx` is the size of the context now. It changes to red when it is more than 200k. The cost is for
+the whole session. The status line needs `python3`. You can run `setup` again at any time. It does
+not change a configuration that already exists.
 
-Run `setup` again at any time. It changes nothing that is already there, and says so if an existing
-`settings.json` lacks these settings.
+`./workshop.sh claude` is `claude` with `CLAUDE_CONFIG_DIR` set to the workshop directory. Any
+argument after `claude` goes to Claude Code. The first session starts logged out. Run
+`claude auth login` once inside the session.
 
-To start the workshop:
-
-```bash
-./workshop.sh claude
-```
-
-This is `claude` with `CLAUDE_CONFIG_DIR` set to the workshop directory for that session only, and
-any argument after `claude` passes straight through. It also records the session: it starts the
-capture proxy, sets `ANTHROPIC_BASE_URL` to it, opens the recording in your browser at the first
-API call, and stops everything again when you quit. See "See what the model actually received"
-below.
-
-The first Claude session on the new configuration starts logged out, because the sign-in record
-lives in the configuration directory. Run `claude auth login` once inside the session.
-
-To go back to your own setup, start `claude` as usual. Nothing else is necessary, because the
-script deletes nothing from `~/.claude`.
-
-These environment variables change the target:
-
-- `WORKSHOP_HOME` - the directory of the workshop configuration. Default: `~/claude-synth-workshop`.
-- `WORKSHOP_CAPTURE` - set to `0` to start the session without recording it. Default: `1`.
-- `WORKSHOP_CAPTURE_DIR` - where the recordings go. Default: `./captures`.
-- `WORKSHOP_CAPTURE_PORT` - the first port the recorder tries. Default: `8788`.
-- `WORKSHOP_VIEWER` - set to `0` to record without the live page in the browser. Default: `1`.
-
----
-
-## Start a Claude Code session
-
-```bash
-./workshop.sh claude
-```
-
-That is `claude` on the workshop configuration, with the session recorded. Any argument after
-`claude` goes on to Claude Code. The recording opens in your browser at the first API call and
-follows the session. To start a session without a recording, set `WORKSHOP_CAPTURE=0`; to record
-without the browser page, set `WORKSHOP_VIEWER=0`. The next section says what the recording is for.
-
-To record a session on your **own** configuration instead, run:
-
-```bash
-./workshop.sh claude-own
-```
-
-That is plain `claude`, on `~/.claude` (or whatever `CLAUDE_CONFIG_DIR` already names), with the
-same recorder in front of it. Nothing is isolated. Run one session of each, then render both:
-the two recordings show what your own settings, skills and MCP servers add to every request that
-the clean workshop configuration does not carry.
+To go back to your own setup, start `claude` as usual. The script deletes nothing from `~/.claude`.
+`./workshop.sh -h` lists the environment variables, for example `WORKSHOP_CAPTURE=0` to start a
+session without a recording.
 
 ---
 
 ## See what the model actually received
 
-The model is a stateless function. It keeps nothing between calls, so every request carries the
-whole context again: a system prompt, the schema of every tool, and the conversation so far. That
-payload is what your instructions, your `CLAUDE.md` and your context hygiene actually produce, and
-it is the thing worth looking at when a session behaves in a way you did not expect.
+The model is stateless. It keeps nothing between calls, so every request sends the whole context
+again: the system prompt, the schema of every tool, and the conversation. Your `CLAUDE.md`, your
+settings and your context hygiene all show in this payload. The transcript in
+`~/.claude/projects/` does not show the system prompt, the tool schemas or the cache breakpoints.
+Only the requests on the network contain them.
 
-Claude Code's own transcript in `~/.claude/projects/` does not hold it. The transcript records the
-conversation — your messages, the answers, the tool calls — but not the system prompt, not the tool
-schemas and not the cache breakpoints. Those exist only on the wire. To see them, you have to record
-the requests.
+`./workshop.sh claude` records each request through a local proxy. At the first API call, the
+recording opens in your browser. The page then follows the session. When you quit, the script
+saves the pages into `captures/<timestamp>/`. If the recorder cannot start, the script tells you
+and starts the session without it.
 
-`capture.sh` does that with a proxy. Claude Code sends its requests to whatever `ANTHROPIC_BASE_URL`
-names, so a local proxy in front of the API sees every byte.
+To compare, run one session with `./workshop.sh claude` and one with `./workshop.sh claude-own`.
+`claude-own` records a session on your own configuration. The difference is what your own
+settings, skills and MCP servers add to every request. `./capture.sh list` shows the recordings.
 
-**`./workshop.sh claude` does this for you.** It says which configuration the session uses,
-starts the recorder, points the session at it, and starts a viewer next to it. At the first API
-call the viewer opens the recording in your browser, and from then on the page follows the session:
-each call that completes appears on it a second later. When you quit, the script stops both and
-saves the pages into the recording, so that you can open them again later:
+![The context profiler: the tools take 84.6% of the prompt](docs/images/context-profiler.png)
 
-```bash
-./workshop.sh claude      # work as usual. The session is recorded and shown as it goes.
-```
+The recording has two pages. `index.html` shows the tokens of each call and what changed since
+the previous call. `context_profiler.html`, above, divides one request into its parts. The tree on
+the left shows the estimated tokens of each part. The table on the right sorts the parts by tokens.
+In this example, the tool schemas are 84.6% of the prompt, and the Artifact tool alone is 12k
+tokens. Use the arrow keys to move from one request to the next one.
 
-`./workshop.sh claude-own` records in the same way, on your own configuration. It exists for the
-comparison: the same prompt on the clean workshop configuration and on your everyday one, side by
-side in `./capture.sh list`.
-
-Recording is best effort. If the recorder cannot start — no `python3`, no free port, nowhere to
-write — the script says so and starts the session anyway. A broken recorder never costs you a
-session, and a broken viewer costs you a page in the browser and nothing else. `WORKSHOP_CAPTURE=0`
-turns the recording off, `WORKSHOP_VIEWER=0` turns only the browser page off, and
-`./workshop.sh profile status` shows the current state.
-
-To record a session that you start yourself, run the parts by hand:
+To record a session that you start yourself, use three terminals:
 
 ```bash
 ./capture.sh start                                # terminal 1: the recorder
-./capture.sh view                                 # terminal 2: the page, opens at the first call
+./capture.sh view                                 # terminal 2: the page
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 3
-CLAUDE_CONFIG_DIR=~/claude-synth-workshop/claude-config claude   # terminal 3: work as usual
+CLAUDE_CONFIG_DIR=~/claude-synth-workshop/claude-config claude   # terminal 3
 ```
 
-`start` runs until Ctrl-C and writes one JSON file per API call into `captures/<timestamp>/`.
-`view` serves that recording on a local port as two pages, rebuilt whenever a call lands, and
-writes them into `captures/<timestamp>/` when it stops: `index.html`, what changed between calls,
-and `context_profiler.html`, what one call is made of. Each page links to the other. `render`
-writes the same two pages from a recording without a viewer, and inside a session the `/capture`
-command does that for the current recording.
-
-```
-capture.sh          # start | view | render | list
-capture/proxy.py    # the recorder. Forwards to the API, keeps a copy
-capture/serve.py    # the viewer. Serves the recording as a page that follows the session
-capture/render.py   # the reader. Recording -> index.html, the diff between calls
-capture/profile.py  # the profiler. Recording -> context_profiler.html, the parts of one call
-captures/           # the recordings. Stays out of git
-```
-
-The parts are separate on purpose. The proxy sits in the critical path of your session, so it
-parses nothing and decides nothing: it moves bytes and drops a copy on disk. Everything that could
-be wrong or slow lives in `render.py` and `profile.py`, which the viewer runs over the files in a
-process of its own. The page in the browser polls the viewer once a second and reloads itself when
-a call has landed; it keeps the request and the part you were looking at, and stays on the newest
-request if that is where you were. When the viewer is gone, the page says so and names the saved
-copy.
-
-### What the page shows
-
-Every request repeats the previous one, extended. A page that printed each request in full would be
-the session written out N times, so the renderer prints only what **changed** since the previous
-call of the same conversation:
-
-- **System prompt** — in full on the first call, then only when it changes. A change mid-session
-  means the harness injected something: a skill, a reminder, a compaction.
-- **Tool schemas** — the names always, the full JSON on demand, and a marker when a tool appears or
-  disappears. This is usually the largest fixed block in the prompt.
-- **Cache breakpoints** — where the request asks the API to cut a cache segment. When a breakpoint
-  moves, everything after it must be written to the cache again, and the call gets expensive.
-- **New messages** — the ones appended since the last call. The replayed history stays folded away.
-- **The answer** — reassembled from the stream, with its `stop_reason` and token counts.
-
-Requests are grouped into **chains** by their first message. A subagent, a compaction and the main
-conversation each open their own first message, so each gets its own chain instead of polluting the
-others' diffs.
-
-### The token table
-
-The page opens with one row per API call. The numbers come from the API's own `usage`, so they are
-what you are billed for:
-
-```
-  req  chain  model         prompt_in   fresh   cache_read   cache_write   output   new_turn    ms
-    1      1  claude-opus-5     33933       2            0         33931       18          -  4210
-    2      1  claude-opus-5     34057       2        33931           124       94        106  2980
-    3      1  claude-opus-5     44114       2        34055         10057      425       9963  7104
-```
-
-- `prompt_in` is the whole prompt of that call. It only grows.
-- `fresh` is the part the cache did not hold. It stays near zero, because almost every token is
-  replayed history.
-- `cache_read` of call N is close to `prompt_in` of call N-1: each call is the previous one,
-  extended.
-- `new_turn` is `prompt_in[N] - prompt_in[N-1] - output[N-1]` — the tokens your message and the tool
-  results added. A large value marks a file read or a wide tool result that entered the conversation
-  and now rides along in every later call.
-- A drop in `prompt_in` means a compaction.
-
-A low cache hit rate makes a session expensive. The summary line at the top gives the rate, the
-largest prompt of the run and the totals.
-
-### The context profile
-
-`context_profiler.html` is a profiler for the prompt. Pick a request at the top; the tree on the left is
-that request broken into its parts, the pane on the right is the content of the part you selected.
-
-```
-request 7                          58,342 tokens
-├─ system                           4,040   7%
-│  ├─ billing header                   28
-│  ├─ You are a Claude agent…          39   ▮ cache
-│  └─ Claude Code system prompt     3,972   ▮ cache
-│     ├─ Doing tasks                  916
-│     └─ …
-├─ tools                           43,905  75%
-│  ├─ Bash                          3,196
-│  └─ …
-├─ messages                        10,258  18%
-│  ├─ 0 user: system-reminder: CLAUDE.md, skills listing, …
-│  └─ 2 user: tool_result Read      5,747
-└─ answer                             130  (output)
-```
-
-- **The parts.** The system prompt splits into its blocks, and each block into its top-level
-  headings and `<tag>` blocks. The tools split into one row per tool. The messages split into
-  turns, and each turn into its content blocks: text, `tool_use`, `tool_result`, replayed
-  `thinking`. Known pieces are labelled: `CLAUDE.md`, the skills listing, the git status, a
-  `system-reminder`. Everything else carries its first line.
-- **The sizes.** Every row shows its estimated tokens and its share of the request; the bar is the
-  share. Hover the number for the characters. The API counts tokens for the request as a whole and
-  for nothing smaller, so the per-part number is an estimate: the characters of the request divided
-  by the real `input_tokens` gives a chars-per-token ratio, applied to every part. The parts add
-  up to the real total, and the request row shows the ratio it used.
-- **Thinking.** Claude Code asks the API to omit the thinking text, so the recording holds a
-  signature and no words. What `output_tokens` counts beyond the visible answer is thinking, and
-  the answer's thinking row gets it. The same thinking rides back into every later request as a
-  content block, which is where its replayed cost shows.
-- **Cache segments.** A `cache` marker sits on the row that ends a cache segment, and every row
-  says which segment it belongs to. The API hashes tools first, then system, then messages, so the
-  segments are numbered in that order. A part in segment 1 is cached as long as nothing before it
-  changes; a part after the last breakpoint is sent fresh every call.
-- **Moving around.** Left and right arrow keys step through the requests. The selection stays on
-  the same part, so you can watch one tool result or one system block from call to call. "Sort by
-  size" orders every level by cost instead of wire order. The table on the right follows that
-  toggle until you click one of its column headers; a second click flips the direction.
-
-The answer of call N is the last row, set apart, because it becomes part of the prompt of call N+1.
-
-### Options and limits
-
-```bash
-./capture.sh start -p 9000        # another port
-./capture.sh list                 # the recordings
-./capture.sh view <dir>           # a named recording, live, on port 8790
-./capture.sh render <dir> -O      # a named recording, do not open a browser
-```
-
-- `CAPTURE_PORT`, `CAPTURE_VIEW_PORT`, `CAPTURE_DIR` and `CAPTURE_UPSTREAM` set the same things
-  from the environment. Through `workshop.sh` the names are `WORKSHOP_CAPTURE`, `WORKSHOP_VIEWER`,
-  `WORKSHOP_CAPTURE_PORT` and `WORKSHOP_CAPTURE_DIR`. A busy port is not an error: `workshop.sh`
-  walks forward until it finds a free one, and puts the viewer on the next free port after the
-  recorder.
-- The viewer serves the recording over HTTP on `127.0.0.1` only. That is the same exposure as the
-  files on disk, to the programs on your machine and nobody else.
-- The proxy asks the API for uncompressed responses, so that the recording is readable text. That
-  costs some bandwidth on the way in and nothing else.
-- Credentials are never written: the recording stores `authorization` and `x-api-key` as
-  `<redacted>`. Everything else in the recording — your prompts, your files, the answers — is as
-  sensitive as the session itself. `captures/` is in `.gitignore`.
-- The proxy only sees what crosses the network. Hooks, local tool execution and anything Claude Code
-  resolves without an API call leave no trace in the recording.
-- Only sessions that ran through the proxy are recorded. There is nothing to look at afterwards for
-  a session that did not.
-
-To collect numbers for a fleet of sessions rather than the content of one, use the OpenTelemetry
-export instead: `CLAUDE_CODE_ENABLE_TELEMETRY=1` with the `OTEL_*` variables. See
-<https://code.claude.com/docs/en/monitoring-usage>.
+`./capture.sh -h` lists the other commands and options. Inside a session, the `/capture` command
+renders the current recording. The recording does not contain credentials. It contains your
+prompts, your files and the answers, so keep it private. `captures/` stays out of git.
 
 ---
 
 ## `CLAUDE.md` — instructions for the AI assistant
 
-`CLAUDE.md` is the top-level brief that Claude Code reads at the start of every session. It follows
-the **progressive disclosure principle**: the file itself stays short and lists only pointers to
-this README and to the specialized instruction files in `docs/`. Claude loads those files on
-demand, when the task needs them.
+Claude Code reads `CLAUDE.md` at the start of every session. The file stays short. It points to
+this README and to the guideline files in `docs/`. Claude reads those files only when the task
+needs them:
 
 ```
 CLAUDE.md
 ├── README.md                      # project, architecture and build steps
 └── docs/
     ├── common-guidelines-code.md  # applies to all code
-    ├── cpp-guidelines.md          # loaded when working on C++ files
-    └── bash-guidelines.md         # loaded when working on shell scripts
+    ├── cpp-guidelines.md          # for C++ files
+    └── bash-guidelines.md         # for shell scripts
 ```
-
-Each file in `docs/` holds the rules themselves. Read the file to get the rules. This README does
-not repeat them.
-
-> **Fun fact:** `common-guidelines-code.md` is a deliberate blend of two ideas. The terse,
-> grammar-sacrificing style comes from Matt Pocock's principle — *"Be extremely concise. Sacrifice
-> grammar for the sake of concision"*
-> ([source](https://x.com/mattpocockuk/status/1974528553569137095)) — because LLMs process dense
-> bullet points more efficiently than prose. The engineering philosophy (no assumptions, surface
-> tradeoffs, naive-first then optimize) draws from Andrej Karpathy's observations on how LLMs reason
-> and where they go wrong ([source](https://x.com/karpathy/status/2015883857489522876)). The result
-> is instructions that a human can scan easily and an AI can follow well.
 
 ---
 
 ## Style toolchain
 
-Four configuration files keep code and behaviour the same for every developer and every tool.
-
-### `.editorconfig` — the baseline for every file
-
-Sets the lowest-level text rules, so that your editor saves files the same way:
-
-- **Spaces, not tabs** — indentation is always 4 spaces
-- **Unix line endings** (LF) — no Windows-style CRLF gets in
-- **No trailing whitespace** — lines stay clean at the end
-- **Final newline** — every file ends with a newline
-
-Any editor with EditorConfig support (VS Code, CLion, Vim, Emacs and others) reads this file
-automatically.
-
-### `.clang-format` — automatic C++ formatting
-
-Defines the layout of C++ code — braces, spacing, line length and more:
-
-- Starts from the **LLVM style**
-- **4-space indentation**, the same as `.editorconfig`
-- **120-character line limit** — readable on modern screens without too much wrapping
-- **No short functions on a single line** — each function body gets its own lines
-- **Namespace closing comments** for readability
-
-To reformat a file, run `clang-format -i <file>`. The Claude Code hook below does this for you.
-
-### `.clang-tidy` — C++ code quality checks
-
-Catches real problems and bad patterns:
-
-- **`bugprone-*`** — common mistakes that cause bugs
-- **`cppcoreguidelines-*`** — the C++ Core Guidelines
-- **`modernize-*`** — modern C++ idioms
-- **`performance-*`** — patterns that are unnecessarily slow
-- **`readability-*`** — code that stays clear
-
-The configuration turns off two noisy checks (magic numbers, trailing return types) to keep the
-warnings actionable. Header checks apply only to project headers under `src/`.
-
-### `.claude/settings.json` — Claude Code applies the rules for you
-
-- **Auto-format hook** — each time Claude edits or writes a `.cpp`, `.hpp`, `.h` or `.c` file,
-  `clang-format` runs on it immediately. The file is formatted before you see it.
-- **Allowed commands** — Claude runs `cmake`, `make`, `find`, `ls` and a few others without a
-  permission prompt, which keeps the workflow fast.
-
-The AI assistant therefore follows the same style rules as the rest of the toolchain.
+- `.editorconfig` — 4 spaces, LF line endings, no trailing whitespace, a final newline.
+- `.clang-format` — LLVM style, 4-space indentation, 120-character lines. Run
+  `clang-format -i <file>`.
+- `.clang-tidy` — the `bugprone`, `cppcoreguidelines`, `modernize`, `performance` and
+  `readability` checks. The header checks apply only to the headers under `src/`.
+- `.claude/settings.json` — a hook runs `clang-format` on each C++ file that Claude edits. Claude
+  runs `cmake`, `make` and some other commands without a permission prompt.
