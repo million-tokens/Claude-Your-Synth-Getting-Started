@@ -12,7 +12,7 @@ workshop.
 CMakeLists.txt              # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
 build.sh                    # configures, builds and runs the executable
 test.sh                     # builds and runs the tests
-workshop.sh                 # moves the checkout between the lesson tags, sets up the Claude profile
+workshop.sh                 # moves the checkout between the checkpoints, sets up the Claude profile
 capture.sh                  # records what a session sends to the model, renders it as HTML
 capture/                    # the proxy, the viewer and the renderers behind capture.sh
 claude-config/statusline.py # the status line that profile setup installs
@@ -46,15 +46,16 @@ CLAUDE.md                   # top-level brief for Claude Code
 
 ## Workshop navigation
 
-`workshop.sh` moves your checkout between the lessons. Each lesson is an annotated git tag in the
-upstream repository, for example `lesson-03-filter`.
+`workshop.sh` moves your checkout between the checkpoints of the workshop. There is one checkpoint
+after each prompt, named by a number and a word: `10-plugin`, `20-sound`, `30-waveforms`, and so on.
 
 ```bash
-./workshop.sh list                     # show the lesson tags
-./workshop.sh reset lesson-03-filter   # move your branch to the state of lesson 03
-./workshop.sh reset main               # go back to the starting point
-./workshop.sh reset                    # choose the lesson from a menu
-./workshop.sh pull                     # get the latest fixes from upstream main
+./workshop.sh list            # show the checkpoints
+./workshop.sh reset 30        # move your branch to the checkpoint 30-waveforms
+./workshop.sh reset waveforms # the same: the full name, the number or the word all work
+./workshop.sh reset main      # go back to the starting point
+./workshop.sh reset           # choose the checkpoint from a menu
+./workshop.sh pull            # get the latest fixes from upstream main
 ```
 
 Work on your own branch, for example `git switch -c my-work`. The script refuses to change `main`,
@@ -63,26 +64,30 @@ because `main` keeps your reference copy of the starter.
 `reset` discards local commits and uncommitted changes on the current branch. The script prints a
 warning and asks for confirmation first.
 
-The script needs SSH access to GitHub. After the first run, the lesson tags stay in your
-repository, so `git switch --detach lesson-03-filter` also works. `./workshop.sh -h` lists the
-environment variables that change the upstream and the tag prefix.
+The script needs SSH access to GitHub. A clone does not fetch the checkpoints; `list` and `reset`
+fetch them into `refs/checkpoints/`. After that, `git switch --detach refs/checkpoints/30-waveforms`
+also works.
 
-### For the workshop author: how to make a lesson
+### For the workshop author: how to make a checkpoint
 
-The workshop needs the tags and nothing else. Commit on a detached HEAD, then push the tag alone:
+A checkpoint is a commit under `refs/checkpoints/`, not a branch and not a tag, so it never shows
+up in a fresh clone. Commit on a detached HEAD, then push the commit to its checkpoint name:
 
 ```bash
-git switch --detach main
-git commit -am "Add a sine oscillator"
-git tag -a lesson-01-oscillator -m "Add a sine oscillator"
-git push origin lesson-01-oscillator
+git switch --detach refs/checkpoints/20-sound
+git commit -am "Waveforms: sine, saw, square and noise"
+git push origin HEAD:refs/checkpoints/30-waveforms
 ```
 
-- Start every tag name with `lesson-`, then a zero-padded number. The menu sorts by tag name.
-- Use annotated tags. The menu shows the tag message as the lesson title.
-- To move a tag, run `git tag -f -a ...`, then `git push --force origin <tag>`. The next `reset`
-  of a student gets the new position.
-- To remove a tag, run `git tag -d <tag>`, then `git push origin --delete <tag>`.
+- Name it with a number, a dash and one word. The menu sorts by name, so keep the number
+  zero-padded to two digits.
+- Numbers go up in tens, which leaves room to add one later: `25-noise` sits between `20-sound`
+  and `30-waveforms`.
+- The menu shows the commit subject as the checkpoint title.
+- To move a checkpoint, push the new commit with `--force`. The next `reset` of a student gets the
+  new position.
+- To remove one, run `git push origin --delete refs/checkpoints/<name>`.
+- To list what is upstream: `git ls-remote origin 'refs/checkpoints/*'`.
 
 ---
 

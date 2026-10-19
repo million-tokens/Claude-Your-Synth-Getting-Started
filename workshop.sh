@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Workshop helper. It moves your checkout between the lesson tags of the upstream
+# Workshop helper. It moves your checkout between the checkpoints of the upstream
 # workshop repository, and it sets up an isolated Claude Code configuration for the
 # workshop. See the "Workshop navigation" section of README.md.
 
 UPSTREAM_URL="${WORKSHOP_UPSTREAM:-git@github.com:MindWrapper/Claude-Your-Synth-Getting-Started.git}"
-TAG_PREFIX="${WORKSHOP_TAG_PREFIX:-lesson-}"
+# Checkpoints are commits under this ref namespace. A clone fetches only branches
+# and tags, so they stay out of sight until list or reset fetches them.
+CHECKPOINT_REFS="refs/checkpoints"
 BASE_BRANCH="main"
 REMOTE="upstream"
 
@@ -49,9 +51,10 @@ usage() {
     cat <<'USAGE'
 Usage: ./workshop.sh <command> [argument]
 
-Lesson commands:
-  list                 Show the lesson tags of the workshop.
-  reset [lesson-tag]   Move the current branch to a lesson tag. Use "main" for the start.
+Checkpoint commands:
+  list                 Show the checkpoints of the workshop.
+  reset [checkpoint]   Move the current branch to a checkpoint: its full name (30-waveforms),
+                       its number (30) or its name (waveforms). Use "main" for the start.
   pull                 Merge the latest upstream main into the current branch.
 
 Claude configuration commands:
@@ -67,7 +70,6 @@ Claude configuration commands:
 
 Environment:
   WORKSHOP_UPSTREAM    Upstream repository URL. Default: the workshop repository over SSH.
-  WORKSHOP_TAG_PREFIX  Prefix of the lesson tags. Default: lesson-
   WORKSHOP_HOME        Directory of the workshop configuration. Default: ~/claude-synth-workshop
   WORKSHOP_CAPTURE     Set to 0 to start the session without recording. Default: 1
   WORKSHOP_CAPTURE_DIR Directory of the recordings. Default: ./captures
@@ -75,7 +77,7 @@ Environment:
                        First port the recorder tries. Default: 8788
   WORKSHOP_VIEWER      Set to 0 to record without the live page in the browser. Default: 1
 
-If you give no lesson-tag, the script shows a menu.
+If you give no checkpoint, the script shows a menu.
 USAGE
 }
 
@@ -125,39 +127,40 @@ disconnect_upstream() {
     fi
 }
 
-# Fetch upstream main and the lesson tags. The plus sign in the tag refspec makes
-# a moved upstream tag overwrite the stale local copy.
+# Fetch upstream main and the checkpoints. The plus sign makes a moved upstream
+# checkpoint overwrite the stale local copy, and --prune drops the ones upstream
+# removed.
 fetch_upstream() {
     printf 'Fetching %s ...\n' "${UPSTREAM_URL}"
     git fetch --quiet "${REMOTE}" "${BASE_BRANCH}" ||
         die "Cannot fetch ${BASE_BRANCH} from ${UPSTREAM_URL}. Check your SSH access."
-    git fetch --quiet "${REMOTE}" \
-        "+refs/tags/${TAG_PREFIX}*:refs/tags/${TAG_PREFIX}*" ||
-        die "Cannot fetch the ${TAG_PREFIX}* tags from ${UPSTREAM_URL}."
+    git fetch --quiet --prune "${REMOTE}" \
+        "+${CHECKPOINT_REFS}/*:${CHECKPOINT_REFS}/*" ||
+        die "Cannot fetch the checkpoints from ${UPSTREAM_URL}."
 }
 
-# Print one line per lesson tag: <tag><TAB><subject>, in tag name order.
-lesson_tags() {
+# Print one line per checkpoint: <name><TAB><subject>, in name order.
+checkpoints() {
     git for-each-ref --sort=refname \
-        --format='%(refname:short)%09%(contents:subject)' \
-        "refs/tags/${TAG_PREFIX}*"
+        --format='%(refname:lstrip=2)%09%(contents:subject)' \
+        "${CHECKPOINT_REFS}/"
 }
 
-# Show a menu and print the chosen tag. The menu goes to stderr, so that the
-# caller can capture the tag from stdout.
-select_lesson() {
-    local names=() labels=() tag subject choice count i
+# Show a menu and print the chosen ref. The menu goes to stderr, so that the
+# caller can capture the ref from stdout.
+select_checkpoint() {
+    local refs=() labels=() name subject choice count i
 
-    names+=("${REMOTE}/${BASE_BRANCH}")
+    refs+=("${REMOTE}/${BASE_BRANCH}")
     labels+=("main - the starting point")
-    while IFS=$'\t' read -r tag subject; do
-        names+=("${tag}")
-        labels+=("${tag} - ${subject}")
-    done < <(lesson_tags)
+    while IFS=$'\t' read -r name subject; do
+        refs+=("${CHECKPOINT_REFS}/${name}")
+        labels+=("${name} - ${subject}")
+    done < <(checkpoints)
 
-    count="${#names[@]}"
+    count="${#refs[@]}"
 
-    printf '\nWhich lesson do you want to reset to?\n\n' >&2
+    printf '\nWhich checkpoint do you want to reset to?\n\n' >&2
     for ((i = 0; i < count; i++)); do
         printf '  %2d) %s\n' "$((i + 1))" "${labels[i]}" >&2
     done
@@ -167,43 +170,48 @@ select_lesson() {
         die "Invalid selection: ${choice}"
     fi
 
-    printf '%s\n' "${names[choice - 1]}"
+    printf '%s\n' "${refs[choice - 1]}"
 }
 
-# Check that the given lesson tag exists locally after the fetch.
-require_lesson_tag() {
-    local tag="$1"
-    if ! git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
-        printf 'Error: no lesson tag "%s". Available tags:\n' "${tag}" >&2
-        lesson_tags >&2
-        exit 1
-    fi
+# Print the ref of the checkpoint the user named: the full name (30-waveforms),
+# the number (30) or the name (waveforms).
+resolve_checkpoint() {
+    local wanted="$1" name subject
+    while IFS=$'\t' read -r name subject; do
+        if [[ "${name}" == "${wanted}" || "${name}" == "${wanted}-"* || "${name}" == *"-${wanted}" ]]; then
+            printf '%s\n' "${CHECKPOINT_REFS}/${name}"
+            return 0
+        fi
+    done < <(checkpoints)
+
+    printf 'Error: no checkpoint "%s". Available checkpoints:\n' "${wanted}" >&2
+    checkpoints >&2
+    exit 1
 }
 
 cmd_list() {
     connect_upstream
     fetch_upstream
-    printf '\nLesson tags:\n\n'
-    local tag subject
-    while IFS=$'\t' read -r tag subject; do
-        printf '  %-28s %s\n' "${tag}" "${subject}"
-    done < <(lesson_tags)
+    printf '\nCheckpoints:\n\n'
+    local name subject
+    while IFS=$'\t' read -r name subject; do
+        printf '  %-16s %s\n' "${name}" "${subject}"
+    done < <(checkpoints)
     printf '\n'
 }
 
 cmd_reset() {
-    local lesson="${1:-}" target
+    local wanted="${1:-}" target
     refuse_protected_branch "reset"
     connect_upstream
     fetch_upstream
 
-    if [[ -z "${lesson}" ]]; then
-        target="$(select_lesson)"
-    elif [[ "${lesson}" == "${BASE_BRANCH}" ]]; then
+    if [[ -z "${wanted}" ]]; then
+        target="$(select_checkpoint)"
+    elif [[ "${wanted}" == "${BASE_BRANCH}" ]]; then
         target="${REMOTE}/${BASE_BRANCH}"
     else
-        require_lesson_tag "${lesson}"
-        target="${lesson}"
+        target="$(resolve_checkpoint "${wanted}")"
     fi
 
     if [[ -n "$(git status --porcelain)" ]]; then
@@ -458,7 +466,7 @@ cmd_profile_status() {
 # The settings also turn on the status line of the workshop: the context size
 # and the session cost under the input box. The script is copied into the
 # configuration rather than named in the checkout, because "workshop.sh reset"
-# can move the checkout to a tag that does not have it.
+# can move the checkout to a checkpoint that does not have it.
 #
 # A settings.json or a status line script that is already there is left alone,
 # like everything else in the configuration. If the settings lack any of this,
