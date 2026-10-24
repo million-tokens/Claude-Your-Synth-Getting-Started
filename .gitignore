@@ -13,5 +13,4 @@ CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
 build
-captures/
 __pycache__/

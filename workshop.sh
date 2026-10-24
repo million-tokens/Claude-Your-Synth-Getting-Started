@@ -20,22 +20,6 @@ PROFILE_SETTINGS="${PROFILE_CONFIG_DIR}/settings.json"
 STATUSLINE_SOURCE="${SCRIPT_DIR}/claude-config/statusline.py"
 PROFILE_STATUSLINE="${PROFILE_CONFIG_DIR}/statusline.py"
 
-WORKSHOP_CAPTURE="${WORKSHOP_CAPTURE:-1}"
-CAPTURE_PROXY="${SCRIPT_DIR}/capture/proxy.py"
-CAPTURE_DIR="${WORKSHOP_CAPTURE_DIR:-${SCRIPT_DIR}/captures}"
-CAPTURE_PORT="${WORKSHOP_CAPTURE_PORT:-8788}"
-CAPTURE_PID=""
-CAPTURE_LOG=""
-CAPTURE_RUN=""
-
-WORKSHOP_VIEWER="${WORKSHOP_VIEWER:-1}"
-CAPTURE_VIEWER="${SCRIPT_DIR}/capture/serve.py"
-VIEWER_PID=""
-VIEWER_LOG=""
-VIEWER_URL=""
-
-SESSION_CONFIG_DIR=""
-
 REMOTE_EXISTED="unknown"
 
 die() {
@@ -59,23 +43,13 @@ Checkpoint commands:
 
 Claude configuration commands:
   profile setup        Make the isolated Claude configuration for the workshop.
-  profile status       Show the workshop configuration and the recorder state.
+  profile status       Show the workshop configuration.
   profile remove       Delete the workshop configuration.
-  claude [args...]     Start a workshop session on that configuration, and record
-                       what it sends to the model. The recording opens in the
-                       browser at the first API call and follows the session.
-  claude-own [args...] The same recording, on your own configuration (~/.claude).
-                       Compare its recording with a workshop session to see what
-                       your own settings, skills and MCP servers add to the prompt.
+  claude [args...]     Start Claude Code on that configuration.
 
 Environment:
   WORKSHOP_UPSTREAM    Upstream repository URL. Default: the workshop repository over SSH.
   WORKSHOP_HOME        Directory of the workshop configuration. Default: ~/claude-synth-workshop
-  WORKSHOP_CAPTURE     Set to 0 to start the session without recording. Default: 1
-  WORKSHOP_CAPTURE_DIR Directory of the recordings. Default: ./captures
-  WORKSHOP_CAPTURE_PORT
-                       First port the recorder tries. Default: 8788
-  WORKSHOP_VIEWER      Set to 0 to record without the live page in the browser. Default: 1
 
 If you give no checkpoint, the script shows a menu.
 USAGE
@@ -253,180 +227,6 @@ profile_exists() {
     [[ -d "${PROFILE_CONFIG_DIR}" ]]
 }
 
-# --- Recording what the model receives ---------------------------------------
-#
-# ANTHROPIC_BASE_URL is a Claude Code variable: it names the endpoint that Claude
-# Code sends its requests to. "workshop.sh claude" starts the capture proxy on a
-# local port, points that variable at it, and stops the proxy again when the
-# session ends. The proxy forwards every request to the API untouched and keeps a
-# copy, so that you can see what the model actually received. See "See what the
-# model actually received" in README.md.
-#
-# A second process, the viewer, serves the recording as a page that follows the
-# session, and opens it in the browser at the first call. When the session ends,
-# the viewer writes the final pages into the recording.
-#
-# Recording is best effort. If it cannot start, the session runs without it: a
-# broken recorder must never cost you a session. The same goes for the viewer.
-
-port_is_free() {
-    ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
-}
-
-find_free_port() {
-    local port="$1" last=$(($1 + 20))
-    while ((port <= last)); do
-        if port_is_free "${port}"; then
-            printf '%s\n' "${port}"
-            return 0
-        fi
-        port=$((port + 1))
-    done
-    return 1
-}
-
-capture_available() {
-    [[ "${WORKSHOP_CAPTURE}" != "0" ]] &&
-        [[ -f "${CAPTURE_PROXY}" ]] &&
-        command -v python3 >/dev/null 2>&1
-}
-
-start_capture() {
-    local port waited=0
-
-    capture_available || return 1
-
-    if ! port="$(find_free_port "${CAPTURE_PORT}")"; then
-        warn "no free port near ${CAPTURE_PORT}. The session runs without a recording."
-        return 1
-    fi
-
-    CAPTURE_LOG="$(mktemp -t workshop-capture)"
-    # -u: the log is a file, and Python would hold its output back otherwise.
-    python3 -u "${CAPTURE_PROXY}" --port "${port}" --dir "${CAPTURE_DIR}" >"${CAPTURE_LOG}" 2>&1 &
-    CAPTURE_PID=$!
-
-    # Claude Code must not send its first request before the proxy listens.
-    while port_is_free "${port}"; do
-        if ((waited > 50)) || ! kill -0 "${CAPTURE_PID}" 2>/dev/null; then
-            warn "the recorder did not start. The session runs without a recording."
-            cat "${CAPTURE_LOG}" >&2
-            rm -f "${CAPTURE_LOG}"
-            CAPTURE_PID=""
-            return 1
-        fi
-        sleep 0.1
-        waited=$((waited + 1))
-    done
-
-    CAPTURE_PORT="${port}"
-    # The proxy names its run directory on its first line of output.
-    CAPTURE_RUN="$(sed -n 's/^capture: recording to //p' "${CAPTURE_LOG}" | head -n 1)"
-}
-
-viewer_available() {
-    [[ "${WORKSHOP_VIEWER}" != "0" ]] && [[ -f "${CAPTURE_VIEWER}" ]]
-}
-
-# Serve the recording as a live page, and open it in the browser at the first
-# call. Needs a running recorder. Best effort, like the recorder itself.
-start_viewer() {
-    local port waited=0
-
-    viewer_available || return 1
-    if [[ -z "${CAPTURE_RUN}" ]]; then
-        warn "the recorder did not say where it writes. The recording is rendered afterwards."
-        return 1
-    fi
-
-    if ! port="$(find_free_port "$((CAPTURE_PORT + 1))")"; then
-        warn "no free port for the viewer near ${CAPTURE_PORT}. The recording is rendered afterwards."
-        return 1
-    fi
-
-    VIEWER_LOG="$(mktemp -t workshop-viewer)"
-    python3 -u "${CAPTURE_VIEWER}" "${CAPTURE_RUN}" --port "${port}" --open >"${VIEWER_LOG}" 2>&1 &
-    VIEWER_PID=$!
-
-    while port_is_free "${port}"; do
-        if ((waited > 50)) || ! kill -0 "${VIEWER_PID}" 2>/dev/null; then
-            warn "the viewer did not start. The recording is rendered afterwards."
-            cat "${VIEWER_LOG}" >&2
-            rm -f "${VIEWER_LOG}"
-            VIEWER_PID=""
-            return 1
-        fi
-        sleep 0.1
-        waited=$((waited + 1))
-    done
-
-    VIEWER_URL="http://127.0.0.1:${port}/"
-}
-
-# Ask first, insist later, and never block the shell that is trying to exit.
-stop_process() {
-    local pid="$1" waited=0
-
-    # TERM rather than KILL, so the process finishes the file it is writing.
-    kill -TERM "${pid}" 2>/dev/null || true
-    while kill -0 "${pid}" 2>/dev/null; do
-        if ((waited > 50)); then
-            kill -KILL "${pid}" 2>/dev/null || true
-            break
-        fi
-        sleep 0.1
-        waited=$((waited + 1))
-    done
-
-    wait "${pid}" 2>/dev/null || true
-}
-
-# The proxy goes first, so that no call lands after the viewer wrote the final
-# pages. The trap calls this.
-stop_capture() {
-    if [[ -n "${CAPTURE_PID}" ]]; then
-        stop_process "${CAPTURE_PID}"
-        CAPTURE_PID=""
-        rm -f "${CAPTURE_LOG}"
-    fi
-    if [[ -n "${VIEWER_PID}" ]]; then
-        stop_process "${VIEWER_PID}"
-        VIEWER_PID=""
-        rm -f "${VIEWER_LOG}"
-    fi
-}
-
-newest_capture_run() {
-    find "${CAPTURE_DIR}" -mindepth 1 -maxdepth 1 -type d -name '20*' 2>/dev/null | sort | tail -n 1
-}
-
-print_capture_result() {
-    local run count
-
-    run="${CAPTURE_RUN:-$(newest_capture_run)}"
-    [[ -n "${run}" ]] || return 0
-
-    count="$(find "${run}" -maxdepth 1 -name '[0-9]*.json' | wc -l | tr -d ' ')"
-    printf '\nRecorded %s API calls in %s\n' "${count}" "${run}"
-    if [[ -f "${run}/index.html" ]]; then
-        printf 'The page is saved. To open it again, run:\n\n    open %s\n\n' "${run}/index.html"
-    else
-        printf 'To see what the model received, run:\n\n    ./capture.sh render\n\n'
-    fi
-}
-
-capture_status_line() {
-    if [[ "${WORKSHOP_CAPTURE}" == "0" ]]; then
-        printf 'off (WORKSHOP_CAPTURE=0)\n'
-    elif [[ ! -f "${CAPTURE_PROXY}" ]]; then
-        printf 'unavailable: %s is missing\n' "${CAPTURE_PROXY}"
-    elif ! command -v python3 >/dev/null 2>&1; then
-        printf 'unavailable: python3 is not installed\n'
-    else
-        printf 'on, port %s, into %s\n' "${CAPTURE_PORT}" "${CAPTURE_DIR}"
-    fi
-}
-
 print_launch_help() {
     cat <<HELP
 
@@ -434,10 +234,7 @@ To start the workshop, run:
 
     ./workshop.sh claude
 
-That is "claude" with CLAUDE_CONFIG_DIR set to the workshop configuration, and
-the session recorded. The recording opens in your browser at the first API call
-and follows the session. To start a session without a recording, set
-WORKSHOP_CAPTURE=0; to record without the browser page, set WORKSHOP_VIEWER=0.
+That is "claude" with CLAUDE_CONFIG_DIR set to the workshop configuration.
 
 The first Claude session on this configuration starts logged out. Run
 "claude auth login" once inside it. To go back to your own setup, start "claude"
@@ -451,8 +248,7 @@ cmd_profile_status() {
     profile_exists ||
         die "No workshop configuration at ${PROFILE_CONFIG_DIR} yet. Run: ./workshop.sh profile setup"
 
-    printf '\nConfig:    %s\n' "${PROFILE_CONFIG_DIR}"
-    printf 'Recording: %s\n\n' "$(capture_status_line)"
+    printf '\nConfig: %s\n\n' "${PROFILE_CONFIG_DIR}"
 
     printf 'The workshop configuration is isolated. Your own ~/.claude is untouched.\n'
 }
@@ -530,69 +326,14 @@ cmd_profile_remove() {
     printf 'Removed. Your own ~/.claude is untouched.\n'
 }
 
-# Run claude on the configuration in SESSION_CONFIG_DIR. An empty value keeps
-# the caller's own configuration: the variable is then left alone, so that a
-# CLAUDE_CONFIG_DIR from the environment still counts.
-run_claude() {
-    if [[ -n "${SESSION_CONFIG_DIR}" ]]; then
-        CLAUDE_CONFIG_DIR="${SESSION_CONFIG_DIR}" claude "$@"
-    else
-        claude "$@"
-    fi
-}
-
-# Start a session on the given configuration, with the traffic recorded. Any
-# further argument goes on to claude.
-start_session() {
-    local status=0
-
-    SESSION_CONFIG_DIR="$1"
-    shift
-
-    require_claude
-
-    printf 'Config:    %s\n' "${SESSION_CONFIG_DIR:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}"
-
-    # Without a recording there is nothing to clean up afterwards.
-    if ! start_capture; then
-        if capture_available; then
-            printf 'Recording: none, see the warning above\n\n'
-        else
-            printf 'Recording: %s\n\n' "$(capture_status_line)"
-        fi
-        run_claude "$@"
-        return 0
-    fi
-
-    trap stop_capture EXIT INT TERM
-    printf 'Recording: capture proxy started on http://127.0.0.1:%s, writing to %s\n' "${CAPTURE_PORT}" "${CAPTURE_RUN:-${CAPTURE_DIR}}"
-    if start_viewer; then
-        printf 'Viewer:    %s opens in your browser at the first API call\n' "${VIEWER_URL}"
-    elif viewer_available; then
-        printf 'Viewer:    none, see the warning above\n'
-    else
-        printf 'Viewer:    off\n'
-    fi
-    printf 'Nothing else about the session changes.\n\n'
-
-    ANTHROPIC_BASE_URL="http://127.0.0.1:${CAPTURE_PORT}" run_claude "$@" || status=$?
-
-    stop_capture
-    print_capture_result
-    return "${status}"
-}
-
-# A workshop session on the isolated configuration.
+# A workshop session: claude on the isolated configuration. Any further argument
+# goes on to claude.
 cmd_claude() {
+    require_claude
     profile_exists ||
         die "No workshop configuration yet. Run: ./workshop.sh profile setup"
-    start_session "${PROFILE_CONFIG_DIR}" "$@"
-}
-
-# A session on your own configuration, recorded the same way. Put its recording
-# next to a workshop one to see what your own setup adds to every request.
-cmd_claude_own() {
-    start_session "" "$@"
+    printf 'Config: %s\n' "${PROFILE_CONFIG_DIR}"
+    CLAUDE_CONFIG_DIR="${PROFILE_CONFIG_DIR}" exec claude "$@"
 }
 
 cmd_profile() {
@@ -625,10 +366,6 @@ main() {
             ;;
         claude)
             cmd_claude "$@"
-            return 0
-            ;;
-        claude-own)
-            cmd_claude_own "$@"
             return 0
             ;;
     esac

@@ -13,8 +13,6 @@ CMakeLists.txt              # CMake project, fetches JUCE 8.0.4, defines the Min
 build.sh                    # configures, builds and runs the executable
 test.sh                     # builds and runs the tests
 workshop.sh                 # moves the checkout between the checkpoints, sets up the Claude profile
-capture.sh                  # records what a session sends to the model, renders it as HTML
-capture/                    # the proxy, the viewer and the renderers behind capture.sh
 claude-config/statusline.py # the status line that profile setup installs
 src/Main.cpp                # entry point
 tests/                      # Catch2 v3 tests, the MiniSynthTests target
@@ -98,8 +96,8 @@ session history stay in `~/.claude`. The workshop does not read them and does no
 
 ```bash
 ./workshop.sh profile setup    # make the workshop configuration (run once)
-./workshop.sh claude           # start a recorded session on that configuration
-./workshop.sh profile status   # show the configuration and the recorder state
+./workshop.sh claude           # start a session on that configuration
+./workshop.sh profile status   # show the configuration
 ./workshop.sh profile remove   # delete the configuration
 ```
 
@@ -120,48 +118,7 @@ argument after `claude` goes to Claude Code. The first session starts logged out
 `claude auth login` once inside the session.
 
 To go back to your own setup, start `claude` as usual. The script deletes nothing from `~/.claude`.
-`./workshop.sh -h` lists the environment variables, for example `WORKSHOP_CAPTURE=0` to start a
-session without a recording.
-
----
-
-## See what the model actually received
-
-The model is stateless. It keeps nothing between calls, so every request sends the whole context
-again: the system prompt, the schema of every tool, and the conversation. Your `CLAUDE.md`, your
-settings and your context hygiene all show in this payload. The transcript in
-`~/.claude/projects/` does not show the system prompt, the tool schemas or the cache breakpoints.
-Only the requests on the network contain them.
-
-`./workshop.sh claude` records each request through a local proxy. At the first API call, the
-recording opens in your browser. The page then follows the session. When you quit, the script
-saves the pages into `captures/<timestamp>/`. If the recorder cannot start, the script tells you
-and starts the session without it.
-
-To compare, run one session with `./workshop.sh claude` and one with `./workshop.sh claude-own`.
-`claude-own` records a session on your own configuration. The difference is what your own
-settings, skills and MCP servers add to every request. `./capture.sh list` shows the recordings.
-
-![The context profiler: the tools take 84.6% of the prompt](docs/images/context-profiler.png)
-
-The recording has two pages. `index.html` shows the tokens of each call and what changed since
-the previous call. `context_profiler.html`, above, divides one request into its parts. The tree on
-the left shows the estimated tokens of each part. The table on the right sorts the parts by tokens.
-In this example, the tool schemas are 84.6% of the prompt, and the Artifact tool alone is 12k
-tokens. Use the arrow keys to move from one request to the next one.
-
-To record a session that you start yourself, use three terminals:
-
-```bash
-./capture.sh start                                # terminal 1: the recorder
-./capture.sh view                                 # terminal 2: the page
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8788   # terminal 3
-CLAUDE_CONFIG_DIR=~/claude-synth-workshop/claude-config claude   # terminal 3
-```
-
-`./capture.sh -h` lists the other commands and options. Inside a session, the `/capture` command
-renders the current recording. The recording does not contain credentials. It contains your
-prompts, your files and the answers, so keep it private. `captures/` stays out of git.
+`./workshop.sh -h` lists the commands and the environment variables.
 
 ---
 

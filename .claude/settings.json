@@ -7,7 +7,6 @@
             "Bash(cmake *)",
             "Bash(make *)",
             "Bash(jq *)",
-            "Bash(./capture.sh:*)",
             "Read"
         ]
     },
