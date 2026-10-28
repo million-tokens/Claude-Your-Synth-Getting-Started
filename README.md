@@ -6,26 +6,18 @@ workshop.
 
 ---
 
-## Architecture
+## What's in the repo
 
 ```
-CMakeLists.txt              # CMake project, fetches JUCE 8.0.4, defines the MiniSynth target
-build.sh                    # configures, builds and runs the executable
-test.sh                     # builds and runs the tests
-workshop.sh                 # moves the checkout between the checkpoints, sets up the Claude profile
-claude-config/statusline.py # the status line that profile setup installs
-src/Main.cpp                # entry point
-tests/                      # Catch2 v3 tests, the MiniSynthTests target
-docs/                       # code guidelines for Claude Code
-AGENTS.md                   # top-level brief for coding agents
+CMakeLists.txt  # CMake project, fetches JUCE and Catch2, defines the MiniSynth target
+build.sh        # configures, builds and runs the executable
+test.sh         # builds and runs the tests
+workshop.sh     # moves the checkout between the checkpoints, sets up the Claude profile
+src/Main.cpp    # entry point
+tests/          # Catch2 tests
 ```
 
-- **Build system:** CMake 3.22 or later.
-- **Dependencies:** CMake `FetchContent` downloads JUCE 8.0.4 and Catch2 v3.7.1 at configure time.
-  You do not install them yourself. The first configure step takes some minutes.
-- **Targets:** `MiniSynth`, a console application, and `MiniSynthTests`, the test binary. Both
-  link `juce::juce_core`.
-- **Standard:** C++20. CMake also writes `compile_commands.json` for clang-tidy and the editor.
+CMake downloads JUCE and Catch2 at configure time. The first build takes some minutes.
 
 ---
 
@@ -33,12 +25,8 @@ AGENTS.md                   # top-level brief for coding agents
 
 ```bash
 ./build.sh   # configure a Release build in build/, compile MiniSynth, run it
-./test.sh    # build MiniSynthTests in the same build/ directory, run the tests with ctest
+./test.sh    # build the tests in the same build/ directory and run them
 ```
-
-`build.sh` does not compile the tests. To get the Catch2 options, run
-`./build/tests/MiniSynthTests --help`. Add new test files to `tests/`, then list them in the
-`add_executable` command in `tests/CMakeLists.txt`.
 
 ---
 
@@ -60,11 +48,7 @@ Work on your own branch, for example `git switch -c my-work`. The script refuses
 because `main` keeps your reference copy of the starter.
 
 `reset` discards local commits and uncommitted changes on the current branch. The script prints a
-warning and asks for confirmation first.
-
-The script needs SSH access to GitHub. A clone does not fetch the checkpoints; `list` and `reset`
-fetch them into `refs/checkpoints/`. After that, `git switch --detach refs/checkpoints/30-waveforms`
-also works.
+warning and asks for confirmation first. The script needs SSH access to GitHub.
 
 ---
 
@@ -76,54 +60,18 @@ session history stay in `~/.claude`. The workshop does not read them and does no
 ```bash
 ./workshop.sh profile setup    # make the workshop configuration (run once)
 ./workshop.sh claude           # start a session on that configuration
-./workshop.sh profile status   # show the configuration
-./workshop.sh profile remove   # delete the configuration
 ```
 
-`setup` makes `~/claude-synth-workshop/claude-config` with a `settings.json`. The settings switch
-off the claude.ai connectors and the Artifact tool, because these add much text to every prompt.
-The settings also install a status line under the input box:
+The first session starts logged out. Run `claude auth login` once inside the session. To go back to
+your own setup, start `claude` as usual. `./workshop.sh -h` lists all the commands, including
+`profile status` and `profile remove`.
+
+The profile switches off the claude.ai connectors and the Artifact tool, because these add much
+text to every prompt. It also installs a status line under the input box:
 
 ```
 Claude-Your-Synth-Getting-Started (my-synth) in 12.4k out 1.8k ctx 14.2k $0.42
 ```
 
-`ctx` is the size of the context now. It changes to red when it is more than 200k. The cost is for
-the whole session. The status line needs `python3`. You can run `setup` again at any time. It does
-not change a configuration that already exists.
-
-`./workshop.sh claude` is `claude` with `CLAUDE_CONFIG_DIR` set to the workshop directory. Any
-argument after `claude` goes to Claude Code. The first session starts logged out. Run
-`claude auth login` once inside the session.
-
-To go back to your own setup, start `claude` as usual. The script deletes nothing from `~/.claude`.
-`./workshop.sh -h` lists the commands and the environment variables.
-
----
-
-## `AGENTS.md` — instructions for the AI assistant
-
-Coding agents read `AGENTS.md` at the start of every session. The file stays short. It points to
-this README and to the guideline files in `docs/`. Claude reads those files only when the task
-needs them:
-
-```
-AGENTS.md
-├── README.md                      # project, architecture and build steps
-└── docs/
-    ├── common-guidelines-code.md  # applies to all code
-    ├── cpp-guidelines.md          # for C++ files
-    └── bash-guidelines.md         # for shell scripts
-```
-
----
-
-## Style toolchain
-
-- `.editorconfig` — 4 spaces, LF line endings, no trailing whitespace, a final newline.
-- `.clang-format` — LLVM style, 4-space indentation, 120-character lines. Run
-  `clang-format -i <file>`.
-- `.clang-tidy` — the `bugprone`, `cppcoreguidelines`, `modernize`, `performance` and
-  `readability` checks. The header checks apply only to the headers under `src/`.
-- `.claude/settings.json` — a hook runs `clang-format` on each C++ file that Claude edits. Claude
-  runs `cmake`, `make` and some other commands without a permission prompt.
+`ctx` is the size of the context now. It turns red above 200k. The cost is for the whole session.
+The status line needs `python3`.
