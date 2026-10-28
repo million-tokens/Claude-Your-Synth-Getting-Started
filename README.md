@@ -17,7 +17,7 @@ claude-config/statusline.py # the status line that profile setup installs
 src/Main.cpp                # entry point
 tests/                      # Catch2 v3 tests, the MiniSynthTests target
 docs/                       # code guidelines for Claude Code
-CLAUDE.md                   # top-level brief for Claude Code
+AGENTS.md                   # top-level brief for coding agents
 ```
 
 - **Build system:** CMake 3.22 or later.
@@ -122,14 +122,14 @@ To go back to your own setup, start `claude` as usual. The script deletes nothin
 
 ---
 
-## `CLAUDE.md` — instructions for the AI assistant
+## `AGENTS.md` — instructions for the AI assistant
 
-Claude Code reads `CLAUDE.md` at the start of every session. The file stays short. It points to
+Coding agents read `AGENTS.md` at the start of every session. The file stays short. It points to
 this README and to the guideline files in `docs/`. Claude reads those files only when the task
 needs them:
 
 ```
-CLAUDE.md
+AGENTS.md
 ├── README.md                      # project, architecture and build steps
 └── docs/
     ├── common-guidelines-code.md  # applies to all code
