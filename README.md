@@ -66,27 +66,6 @@ The script needs SSH access to GitHub. A clone does not fetch the checkpoints; `
 fetch them into `refs/checkpoints/`. After that, `git switch --detach refs/checkpoints/30-waveforms`
 also works.
 
-### For the workshop author: how to make a checkpoint
-
-A checkpoint is a commit under `refs/checkpoints/`, not a branch and not a tag, so it never shows
-up in a fresh clone. Commit on a detached HEAD, then push the commit to its checkpoint name:
-
-```bash
-git switch --detach refs/checkpoints/20-sound
-git commit -am "Waveforms: sine, saw, square and noise"
-git push origin HEAD:refs/checkpoints/30-waveforms
-```
-
-- Name it with a number, a dash and one word. The menu sorts by name, so keep the number
-  zero-padded to two digits.
-- Numbers go up in tens, which leaves room to add one later: `25-noise` sits between `20-sound`
-  and `30-waveforms`.
-- The menu shows the commit subject as the checkpoint title.
-- To move a checkpoint, push the new commit with `--force`. The next `reset` of a student gets the
-  new position.
-- To remove one, run `git push origin --delete refs/checkpoints/<name>`.
-- To list what is upstream: `git ls-remote origin 'refs/checkpoints/*'`.
-
 ---
 
 ## Start Claude Code with the workshop profile
