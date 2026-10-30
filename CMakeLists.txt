@@ -14,23 +14,33 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
-juce_add_console_app(MiniSynth
+juce_add_plugin(MiniSynth
+    COMPANY_NAME "MillionTokens"
     PRODUCT_NAME "MiniSynth"
+    PLUGIN_MANUFACTURER_CODE MilT
+    PLUGIN_CODE MnSy
+    FORMATS AU
+    IS_SYNTH TRUE
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
+    AU_MAIN_TYPE kAudioUnitType_MusicDevice
+    COPY_PLUGIN_AFTER_BUILD TRUE
 )
 
 target_sources(MiniSynth PRIVATE
-    src/Main.cpp
+    src/PluginProcessor.cpp
 )
 
 target_compile_definitions(MiniSynth
-    PRIVATE
+    PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
 target_link_libraries(MiniSynth
     PRIVATE
-        juce::juce_core
+        juce::juce_audio_utils
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )

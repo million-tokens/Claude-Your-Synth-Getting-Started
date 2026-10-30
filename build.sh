@@ -2,29 +2,18 @@
 set -euo pipefail
 
 BUILD_DIR="build"
+PLUGIN_NAME="MiniSynth.component"
+INSTALL_DIR="${HOME}/Library/Audio/Plug-Ins/Components"
 
 PARALLEL_JOBS="$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 4)"
 
 cmake -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
-cmake --build "${BUILD_DIR}" --config Release --parallel "${PARALLEL_JOBS}" --target MiniSynth
+cmake --build "${BUILD_DIR}" --config Release --parallel "${PARALLEL_JOBS}" --target MiniSynth_AU
 
-BINARY=""
-for candidate in \
-    "${BUILD_DIR}/MiniSynth_artefacts/Release/MiniSynth" \
-    "${BUILD_DIR}/MiniSynth_artefacts/Debug/MiniSynth" \
-    "${BUILD_DIR}/MiniSynth" \
-    "${BUILD_DIR}/Release/MiniSynth"; do
-    if [[ -x "${candidate}" ]]; then
-        BINARY="${candidate}"
-        break
-    fi
-done
-
-if [[ -z "${BINARY}" ]]; then
-    echo "Build complete. Binary not found in expected locations."
+if [[ ! -d "${INSTALL_DIR}/${PLUGIN_NAME}" ]]; then
+    echo "Build complete, but the plugin is not installed in ${INSTALL_DIR}."
     exit 1
 fi
 
 echo ""
-echo "Running: ${BINARY}"
-"${BINARY}"
+echo "Installed: ${INSTALL_DIR}/${PLUGIN_NAME}"
