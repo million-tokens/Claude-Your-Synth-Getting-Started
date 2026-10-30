@@ -4,12 +4,9 @@
 #include "SynthMath.h"
 
 #include <algorithm>
-#include <cmath>
-#include <numbers>
 
 namespace {
 constexpr double rampSeconds = 0.005;
-constexpr double twoPi = 2.0 * std::numbers::pi;
 } // namespace
 
 MiniSynthProcessor::MiniSynthProcessor()
@@ -17,6 +14,7 @@ MiniSynthProcessor::MiniSynthProcessor()
       state(*this, nullptr, "MiniSynth", createLayout()) {
     levelParam = state.getRawParameterValue(levelId);
     levelParameter = state.getParameter(levelId);
+    waveformParam = state.getRawParameterValue(waveformId);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLayout() {
@@ -27,6 +25,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLa
         juce::ParameterID(levelId, 1), "Level", juce::NormalisableRange<float>(0.0F, 1.0F), 0.4F,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction(toText).withValueFromStringFunction(
             fromText)));
+    layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID(waveformId, 1), "Waveform",
+                                                            juce::StringArray{"Sine", "Saw", "Square", "Noise"}, 1));
     return layout;
 }
 
@@ -50,7 +50,7 @@ bool MiniSynthProcessor::isBusesLayoutSupported(const BusesLayout &layouts) cons
 void MiniSynthProcessor::handleMidi(const juce::MidiMessage &message) {
     if (message.isNoteOn()) {
         currentNote = message.getNoteNumber();
-        phaseIncrement = twoPi * synthmath::midiNoteToFrequency(currentNote) / sampleRate;
+        phaseIncrement = synthmath::midiNoteToFrequency(currentNote) / sampleRate;
         noteGain.setTargetValue(synthmath::velocityToAmplitude(message.getVelocity()));
     } else if (message.isNoteOff()) {
         if (message.getNoteNumber() == currentNote) {
@@ -77,12 +77,14 @@ void MiniSynthProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Mi
         }
         // A CC may just have moved the parameter, so read the target after the MIDI is handled.
         level.setTargetValue(levelParam->load());
+        const auto waveform = static_cast<synthmath::Waveform>(juce::roundToInt(waveformParam->load()));
         const int next = event != midi.end() ? std::min((*event).samplePosition, numSamples) : numSamples;
         for (; position < next; ++position) {
-            const auto sample = static_cast<float>(std::sin(phase)) * noteGain.getNextValue() * level.getNextValue();
+            const auto sample =
+                synthmath::waveSample(waveform, phase, noiseState) * noteGain.getNextValue() * level.getNextValue();
             phase += phaseIncrement;
-            if (phase >= twoPi) {
-                phase -= twoPi;
+            if (phase >= 1.0) {
+                phase -= 1.0;
             }
             for (int channel = 0; channel < numChannels; ++channel) {
                 buffer.getWritePointer(channel)[position] = sample;

@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <cstdint>
 
 class MiniSynthProcessor final : public juce::AudioProcessor {
   public:
@@ -35,6 +36,7 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     }
 
     static constexpr auto levelId = "level";
+    static constexpr auto waveformId = "waveform";
 
   private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -43,10 +45,12 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     juce::AudioProcessorValueTreeState state;
     std::atomic<float> *levelParam = nullptr;
     juce::RangedAudioParameter *levelParameter = nullptr;
+    std::atomic<float> *waveformParam = nullptr;
 
     double sampleRate = 0.0;
     double phase = 0.0;
     double phaseIncrement = 0.0;
+    std::uint32_t noiseState = 0x12345678U;
     int currentNote = -1;
     juce::SmoothedValue<float> level;
     juce::SmoothedValue<float> noteGain;
