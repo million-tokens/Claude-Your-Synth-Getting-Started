@@ -144,3 +144,67 @@ TEST_CASE("Filter stays finite and bounded on noise") {
         }
     }
 }
+
+namespace {
+constexpr double adsrRate = 48000.0;
+
+float tickFor(synthmath::AdsrState &state, const synthmath::AdsrParams &params,
+              double seconds) {
+  float level = state.level;
+  for (int i = 0; i < static_cast<int>(seconds * adsrRate); ++i) {
+    level = synthmath::adsrTick(state, params, adsrRate);
+  }
+  return level;
+}
+} // namespace
+
+TEST_CASE("ADSR follows attack, decay, sustain and release") {
+  const synthmath::AdsrParams params{0.01F, 0.1F, 0.5F, 0.2F};
+  synthmath::AdsrState state;
+  synthmath::adsrGateOn(state);
+  CHECK(tickFor(state, params, 0.01) == Approx(1.0F).margin(0.02));
+  CHECK(tickFor(state, params, 0.1) == Approx(0.5F).margin(0.02));
+  for (int i = 0; i < 48000; ++i) {
+    CHECK(synthmath::adsrTick(state, params, adsrRate) ==
+          Approx(0.5F).margin(0.001));
+  }
+  synthmath::adsrGateOff(state);
+  CHECK(tickFor(state, params, 0.2) < 0.01F);
+}
+
+TEST_CASE("ADSR stays within 0..1 over a grid of parameters") {
+  for (const float attack : {0.001F, 0.05F, 5.0F}) {
+    for (const float decay : {0.001F, 0.05F, 5.0F}) {
+      for (const float sustain : {0.0F, 0.3F, 1.0F}) {
+        for (const float release : {0.001F, 0.05F, 10.0F}) {
+          const synthmath::AdsrParams params{attack, decay, sustain, release};
+          synthmath::AdsrState state;
+          synthmath::adsrGateOn(state);
+          for (int i = 0; i < 48000; ++i) {
+            const float level = synthmath::adsrTick(state, params, adsrRate);
+            REQUIRE(level >= 0.0F);
+            REQUIRE(level <= 1.0F);
+          }
+          synthmath::adsrGateOff(state);
+          for (int i = 0; i < 48000; ++i) {
+            const float level = synthmath::adsrTick(state, params, adsrRate);
+            REQUIRE(level >= 0.0F);
+            REQUIRE(level <= 1.0F);
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("ADSR retrigger restarts the attack from the current level") {
+  const synthmath::AdsrParams params{0.01F, 0.1F, 0.5F, 0.2F};
+  synthmath::AdsrState state;
+  synthmath::adsrGateOn(state);
+  while (state.level < 0.5F) {
+    synthmath::adsrTick(state, params, adsrRate);
+  }
+  const float before = state.level;
+  synthmath::adsrGateOn(state);
+  CHECK(synthmath::adsrTick(state, params, adsrRate) > before);
+}

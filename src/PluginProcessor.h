@@ -41,6 +41,10 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     static constexpr auto waveformId = "waveform";
     static constexpr auto cutoffId = "cutoff";
     static constexpr auto resonanceId = "resonance";
+    static constexpr auto attackId = "attack";
+    static constexpr auto decayId = "decay";
+    static constexpr auto sustainId = "sustain";
+    static constexpr auto releaseId = "release";
 
   private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -54,6 +58,14 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     juce::RangedAudioParameter *cutoffParameter = nullptr;
     std::atomic<float> *resonanceParam = nullptr;
     juce::RangedAudioParameter *resonanceParameter = nullptr;
+    std::atomic<float> *attackParam = nullptr;
+    juce::RangedAudioParameter *attackParameter = nullptr;
+    std::atomic<float> *decayParam = nullptr;
+    juce::RangedAudioParameter *decayParameter = nullptr;
+    std::atomic<float> *sustainParam = nullptr;
+    juce::RangedAudioParameter *sustainParameter = nullptr;
+    std::atomic<float> *releaseParam = nullptr;
+    juce::RangedAudioParameter *releaseParameter = nullptr;
 
     double sampleRate = 0.0;
     double phase = 0.0;
@@ -61,7 +73,8 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     std::uint32_t noiseState = 0x12345678U;
     int currentNote = -1;
     juce::SmoothedValue<float> level;
-    juce::SmoothedValue<float> noteGain;
+    juce::SmoothedValue<float> velocityGain;
+    synthmath::AdsrState envelope;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> cutoff;
     juce::SmoothedValue<float> resonance;
     synthmath::FilterState filterState;

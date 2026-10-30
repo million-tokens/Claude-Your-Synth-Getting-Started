@@ -8,6 +8,7 @@
 
 namespace {
 constexpr double rampSeconds = 0.005;
+constexpr double velocityGlideSeconds = 0.005;
 } // namespace
 
 MiniSynthProcessor::MiniSynthProcessor()
@@ -20,6 +21,14 @@ MiniSynthProcessor::MiniSynthProcessor()
     cutoffParameter = state.getParameter(cutoffId);
     resonanceParam = state.getRawParameterValue(resonanceId);
     resonanceParameter = state.getParameter(resonanceId);
+    attackParam = state.getRawParameterValue(attackId);
+    attackParameter = state.getParameter(attackId);
+    decayParam = state.getRawParameterValue(decayId);
+    decayParameter = state.getParameter(decayId);
+    sustainParam = state.getRawParameterValue(sustainId);
+    sustainParameter = state.getParameter(sustainId);
+    releaseParam = state.getRawParameterValue(releaseId);
+    releaseParameter = state.getParameter(releaseId);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLayout() {
@@ -50,6 +59,32 @@ juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLa
         juce::ParameterID(resonanceId, 1), "Resonance", juce::NormalisableRange<float>(0.0F, 1.0F), 0.2F,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction(toText).withValueFromStringFunction(
             fromText)));
+    const auto timeToText = [](float seconds, int) {
+        return seconds < 1.0F ? juce::String(juce::roundToInt(seconds * 1000.0F)) + " ms"
+                              : juce::String(seconds, 2) + " s";
+    };
+    const auto timeFromText = [](const juce::String &text) {
+        const auto value = text.getFloatValue();
+        const bool milliseconds = text.containsIgnoreCase("ms") || !text.containsIgnoreCase("s");
+        return milliseconds ? value / 1000.0F : value;
+    };
+    // The centre of each skewed range keeps the short end of the dial usable.
+    const auto addTime = [&](const char *id, const char *name, float maxSeconds, float centreSeconds,
+                             float defaultSeconds) {
+        juce::NormalisableRange<float> range(0.001F, maxSeconds);
+        range.setSkewForCentre(centreSeconds);
+        layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID(id, 1), name, range, defaultSeconds,
+                                                               juce::AudioParameterFloatAttributes()
+                                                                   .withStringFromValueFunction(timeToText)
+                                                                   .withValueFromStringFunction(timeFromText)));
+    };
+    addTime(attackId, "Attack", 5.0F, 0.1F, 0.01F);
+    addTime(decayId, "Decay", 5.0F, 0.1F, 0.2F);
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID(sustainId, 1), "Sustain", juce::NormalisableRange<float>(0.0F, 1.0F), 0.7F,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction(toText).withValueFromStringFunction(
+            fromText)));
+    addTime(releaseId, "Release", 10.0F, 0.3F, 0.3F);
     layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID(waveformId, 1), "Waveform",
                                                             juce::StringArray{"Sine", "Saw", "Square", "Noise"}, 1));
     return layout;
@@ -59,8 +94,9 @@ void MiniSynthProcessor::prepareToPlay(double newSampleRate, int) {
     sampleRate = newSampleRate;
     level.reset(sampleRate, rampSeconds * 4.0);
     level.setCurrentAndTargetValue(levelParam->load());
-    noteGain.reset(sampleRate, rampSeconds);
-    noteGain.setCurrentAndTargetValue(0.0F);
+    velocityGain.reset(sampleRate, velocityGlideSeconds);
+    velocityGain.setCurrentAndTargetValue(0.0F);
+    envelope = {};
     cutoff.reset(sampleRate, rampSeconds * 4.0);
     cutoff.setCurrentAndTargetValue(cutoffParam->load());
     resonance.reset(sampleRate, rampSeconds * 4.0);
@@ -82,11 +118,18 @@ void MiniSynthProcessor::handleMidi(const juce::MidiMessage &message) {
     if (message.isNoteOn()) {
         currentNote = message.getNoteNumber();
         phaseIncrement = synthmath::midiNoteToFrequency(currentNote) / sampleRate;
-        noteGain.setTargetValue(synthmath::velocityToAmplitude(message.getVelocity()));
+        const auto velocity = synthmath::velocityToAmplitude(message.getVelocity());
+        // An idle envelope is silent, so the velocity can be set at once; a ringing one glides.
+        if (envelope.stage == synthmath::AdsrStage::idle) {
+            velocityGain.setCurrentAndTargetValue(velocity);
+        } else {
+            velocityGain.setTargetValue(velocity);
+        }
+        synthmath::adsrGateOn(envelope);
     } else if (message.isNoteOff()) {
         if (message.getNoteNumber() == currentNote) {
             currentNote = -1;
-            noteGain.setTargetValue(0.0F);
+            synthmath::adsrGateOff(envelope);
         }
     } else if (message.isController()) {
         const auto value = synthmath::controlChangeToNormalized(message.getControllerValue());
@@ -99,6 +142,18 @@ void MiniSynthProcessor::handleMidi(const juce::MidiMessage &message) {
             break;
         case synthmath::resonanceControlChange:
             resonanceParameter->setValueNotifyingHost(value);
+            break;
+        case synthmath::attackControlChange:
+            attackParameter->setValueNotifyingHost(value);
+            break;
+        case synthmath::decayControlChange:
+            decayParameter->setValueNotifyingHost(value);
+            break;
+        case synthmath::sustainControlChange:
+            sustainParameter->setValueNotifyingHost(value);
+            break;
+        case synthmath::releaseControlChange:
+            releaseParameter->setValueNotifyingHost(value);
             break;
         default:
             break;
@@ -123,6 +178,8 @@ void MiniSynthProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Mi
         level.setTargetValue(levelParam->load());
         cutoff.setTargetValue(cutoffParam->load());
         resonance.setTargetValue(resonanceParam->load());
+        const synthmath::AdsrParams adsrParams{attackParam->load(), decayParam->load(), sustainParam->load(),
+                                               releaseParam->load()};
         const auto waveform = static_cast<synthmath::Waveform>(juce::roundToInt(waveformParam->load()));
         const int next = event != midi.end() ? std::min((*event).samplePosition, numSamples) : numSamples;
         for (; position < next; ++position) {
@@ -135,7 +192,8 @@ void MiniSynthProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Mi
             }
             const auto filtered = synthmath::filterTick(filterState, filterCoefficients,
                                                         synthmath::waveSample(waveform, phase, noiseState));
-            const auto sample = filtered * noteGain.getNextValue() * level.getNextValue();
+            const auto envelopeGain = synthmath::adsrTick(envelope, adsrParams, sampleRate);
+            const auto sample = filtered * envelopeGain * velocityGain.getNextValue() * level.getNextValue();
             phase += phaseIncrement;
             if (phase >= 1.0) {
                 phase -= 1.0;
