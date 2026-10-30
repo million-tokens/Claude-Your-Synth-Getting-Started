@@ -4,6 +4,7 @@
 #include "SynthMath.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 constexpr double rampSeconds = 0.005;
@@ -15,6 +16,10 @@ MiniSynthProcessor::MiniSynthProcessor()
     levelParam = state.getRawParameterValue(levelId);
     levelParameter = state.getParameter(levelId);
     waveformParam = state.getRawParameterValue(waveformId);
+    cutoffParam = state.getRawParameterValue(cutoffId);
+    cutoffParameter = state.getParameter(cutoffId);
+    resonanceParam = state.getRawParameterValue(resonanceId);
+    resonanceParameter = state.getParameter(resonanceId);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLayout() {
@@ -23,6 +28,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLa
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID(levelId, 1), "Level", juce::NormalisableRange<float>(0.0F, 1.0F), 0.4F,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction(toText).withValueFromStringFunction(
+            fromText)));
+    const auto cutoffToText = [](float value, int) {
+        return value < 1000.0F ? juce::String(juce::roundToInt(value)) + " Hz"
+                               : juce::String(value / 1000.0F, value < 10000.0F ? 2 : 1) + " kHz";
+    };
+    const auto cutoffFromText = [](const juce::String &text) {
+        const auto value = text.getFloatValue();
+        return text.containsIgnoreCase("k") ? value * 1000.0F : value;
+    };
+    // Centre at the geometric mean, which makes the skew exactly logarithmic.
+    juce::NormalisableRange<float> cutoffRange(synthmath::minCutoffHz, synthmath::maxCutoffHz);
+    cutoffRange.setSkewForCentre(std::sqrt(synthmath::minCutoffHz * synthmath::maxCutoffHz));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID(cutoffId, 1), "Cutoff", cutoffRange,
+                                                           2000.0F,
+                                                           juce::AudioParameterFloatAttributes()
+                                                               .withStringFromValueFunction(cutoffToText)
+                                                               .withValueFromStringFunction(cutoffFromText)));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID(resonanceId, 1), "Resonance", juce::NormalisableRange<float>(0.0F, 1.0F), 0.2F,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction(toText).withValueFromStringFunction(
             fromText)));
     layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID(waveformId, 1), "Waveform",
@@ -36,6 +61,12 @@ void MiniSynthProcessor::prepareToPlay(double newSampleRate, int) {
     level.setCurrentAndTargetValue(levelParam->load());
     noteGain.reset(sampleRate, rampSeconds);
     noteGain.setCurrentAndTargetValue(0.0F);
+    cutoff.reset(sampleRate, rampSeconds * 4.0);
+    cutoff.setCurrentAndTargetValue(cutoffParam->load());
+    resonance.reset(sampleRate, rampSeconds * 4.0);
+    resonance.setCurrentAndTargetValue(resonanceParam->load());
+    filterState = {};
+    filterCoefficients = synthmath::filterCoefficients(cutoffParam->load(), resonanceParam->load(), sampleRate);
     phase = 0.0;
     currentNote = -1;
 }
@@ -57,8 +88,21 @@ void MiniSynthProcessor::handleMidi(const juce::MidiMessage &message) {
             currentNote = -1;
             noteGain.setTargetValue(0.0F);
         }
-    } else if (message.isController() && message.getControllerNumber() == synthmath::levelControlChange) {
-        levelParameter->setValueNotifyingHost(synthmath::controlChangeToLevel(message.getControllerValue()));
+    } else if (message.isController()) {
+        const auto value = synthmath::controlChangeToNormalized(message.getControllerValue());
+        switch (message.getControllerNumber()) {
+        case synthmath::levelControlChange:
+            levelParameter->setValueNotifyingHost(value);
+            break;
+        case synthmath::cutoffControlChange:
+            cutoffParameter->setValueNotifyingHost(value);
+            break;
+        case synthmath::resonanceControlChange:
+            resonanceParameter->setValueNotifyingHost(value);
+            break;
+        default:
+            break;
+        }
     }
 }
 
@@ -77,11 +121,21 @@ void MiniSynthProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Mi
         }
         // A CC may just have moved the parameter, so read the target after the MIDI is handled.
         level.setTargetValue(levelParam->load());
+        cutoff.setTargetValue(cutoffParam->load());
+        resonance.setTargetValue(resonanceParam->load());
         const auto waveform = static_cast<synthmath::Waveform>(juce::roundToInt(waveformParam->load()));
         const int next = event != midi.end() ? std::min((*event).samplePosition, numSamples) : numSamples;
         for (; position < next; ++position) {
-            const auto sample =
-                synthmath::waveSample(waveform, phase, noiseState) * noteGain.getNextValue() * level.getNextValue();
+            // Coefficients are recomputed only while a smoother is still moving.
+            const bool moving = cutoff.isSmoothing() || resonance.isSmoothing();
+            const float cutoffHz = cutoff.getNextValue();
+            const float resonanceValue = resonance.getNextValue();
+            if (moving) {
+                filterCoefficients = synthmath::filterCoefficients(cutoffHz, resonanceValue, sampleRate);
+            }
+            const auto filtered = synthmath::filterTick(filterState, filterCoefficients,
+                                                        synthmath::waveSample(waveform, phase, noiseState));
+            const auto sample = filtered * noteGain.getNextValue() * level.getNextValue();
             phase += phaseIncrement;
             if (phase >= 1.0) {
                 phase -= 1.0;

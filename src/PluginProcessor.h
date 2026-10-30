@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SynthMath.h"
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
@@ -37,6 +39,8 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
 
     static constexpr auto levelId = "level";
     static constexpr auto waveformId = "waveform";
+    static constexpr auto cutoffId = "cutoff";
+    static constexpr auto resonanceId = "resonance";
 
   private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -46,6 +50,10 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     std::atomic<float> *levelParam = nullptr;
     juce::RangedAudioParameter *levelParameter = nullptr;
     std::atomic<float> *waveformParam = nullptr;
+    std::atomic<float> *cutoffParam = nullptr;
+    juce::RangedAudioParameter *cutoffParameter = nullptr;
+    std::atomic<float> *resonanceParam = nullptr;
+    juce::RangedAudioParameter *resonanceParameter = nullptr;
 
     double sampleRate = 0.0;
     double phase = 0.0;
@@ -54,6 +62,10 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     int currentNote = -1;
     juce::SmoothedValue<float> level;
     juce::SmoothedValue<float> noteGain;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> cutoff;
+    juce::SmoothedValue<float> resonance;
+    synthmath::FilterState filterState;
+    synthmath::FilterCoefficients filterCoefficients;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniSynthProcessor)
 };

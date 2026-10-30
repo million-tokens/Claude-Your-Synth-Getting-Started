@@ -4,7 +4,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <vector>
 
 using Catch::Approx;
@@ -65,4 +67,80 @@ TEST_CASE("Noise is bounded, centred and repeatable") {
     }
     CHECK(std::abs(sum / count) < 0.05);
     CHECK(first == generate());
+}
+
+TEST_CASE("Cutoff parameter maps logarithmically and clamps") {
+    CHECK(synthmath::cutoffParamToHz(0.0F, 48000.0) == Approx(20.0F).margin(1.0));
+    CHECK(synthmath::cutoffParamToHz(1.0F, 48000.0) == Approx(20000.0F).margin(1.0));
+    CHECK(synthmath::cutoffParamToHz(0.5F, 48000.0) == Approx(std::sqrt(20.0F * 20000.0F)).margin(1.0));
+    CHECK(synthmath::cutoffParamToHz(1.0F, 32000.0) == Approx(0.45F * 32000.0F));
+    float previous = 0.0F;
+    for (int i = 0; i <= 100; ++i) {
+        const auto hz = synthmath::cutoffParamToHz(static_cast<float>(i) / 100.0F, 48000.0);
+        CHECK(hz > previous);
+        previous = hz;
+    }
+}
+
+TEST_CASE("Filter coefficients clamp the cutoff to 0.45 * sampleRate") {
+    const auto high = synthmath::filterCoefficients(1.0e9F, 0.5F, 32000.0);
+    const auto limit = synthmath::filterCoefficients(0.45F * 32000.0F, 0.5F, 32000.0);
+    CHECK(high.a1 == Approx(limit.a1));
+    CHECK(high.a2 == Approx(limit.a2));
+    CHECK(std::isfinite(synthmath::filterCoefficients(-5.0F, 7.0F, 44100.0).a3));
+}
+
+namespace {
+double harmonicMagnitude(const std::vector<float> &signal, std::size_t begin, double frequency, double sampleRate) {
+    double re = 0.0;
+    double im = 0.0;
+    for (std::size_t i = begin; i < signal.size(); ++i) {
+        const double angle = 2.0 * std::numbers::pi * frequency * static_cast<double>(i) / sampleRate;
+        re += signal[i] * std::cos(angle);
+        im += signal[i] * std::sin(angle);
+    }
+    return std::sqrt(re * re + im * im);
+}
+
+std::vector<float> filteredSaw(float cutoffHz, float resonance, double sampleRate) {
+    const auto coefficients = synthmath::filterCoefficients(cutoffHz, resonance, sampleRate);
+    synthmath::FilterState state;
+    std::vector<float> out;
+    double phase = 0.0;
+    for (int i = 0; i < static_cast<int>(sampleRate); ++i) {
+        out.push_back(synthmath::filterTick(state, coefficients, synthmath::sawSample(phase)));
+        phase += 110.0 / sampleRate;
+        phase -= std::floor(phase);
+    }
+    return out;
+}
+} // namespace
+
+TEST_CASE("Low-pass filter removes high harmonics and keeps low ones") {
+    constexpr double sampleRate = 48000.0;
+    const auto closed = filteredSaw(500.0F, 0.0F, sampleRate);
+    const auto open = filteredSaw(20000.0F, 0.0F, sampleRate);
+    const std::size_t begin = closed.size() / 2;
+    const auto db = [&](const std::vector<float> &signal, double frequency) {
+        return 20.0 * std::log10(harmonicMagnitude(signal, begin, frequency, sampleRate));
+    };
+    CHECK(db(open, 1760.0) - db(closed, 1760.0) >= 18.0);
+    CHECK(std::abs(db(open, 220.0) - db(closed, 220.0)) <= 5.0);
+}
+
+TEST_CASE("Filter stays finite and bounded on noise") {
+    for (const float cutoff : {20.0F, 500.0F, 5000.0F, 21000.0F}) {
+        for (const float resonance : {0.0F, 0.5F, 0.9F, 1.0F}) {
+            for (const double sampleRate : {44100.0, 48000.0, 96000.0}) {
+                const auto coefficients = synthmath::filterCoefficients(cutoff, resonance, sampleRate);
+                synthmath::FilterState state;
+                std::uint32_t noiseState = 1;
+                for (int i = 0; i < 20000; ++i) {
+                    const auto out = synthmath::filterTick(state, coefficients, synthmath::noiseSample(noiseState));
+                    REQUIRE(std::isfinite(out));
+                    REQUIRE(std::abs(out) < 100.0F);
+                }
+            }
+        }
+    }
 }
