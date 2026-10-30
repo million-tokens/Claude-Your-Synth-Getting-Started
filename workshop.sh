@@ -5,7 +5,7 @@ set -euo pipefail
 # workshop repository, and it sets up an isolated Claude Code configuration for the
 # workshop. See the "Workshop navigation" section of README.md.
 
-UPSTREAM_URL="${WORKSHOP_UPSTREAM:-git@github.com:MindWrapper/Claude-Your-Synth-Getting-Started.git}"
+UPSTREAM_URL="${WORKSHOP_UPSTREAM:-git@github.com:million-tokens/Claude-Your-Synth-Getting-Started.git}"
 # Checkpoints are commits under this ref namespace. A clone fetches only branches
 # and tags, so they stay out of sight until list or reset fetches them.
 CHECKPOINT_REFS="refs/checkpoints"
