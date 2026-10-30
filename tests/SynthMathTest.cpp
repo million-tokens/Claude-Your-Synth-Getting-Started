@@ -148,63 +148,120 @@ TEST_CASE("Filter stays finite and bounded on noise") {
 namespace {
 constexpr double adsrRate = 48000.0;
 
-float tickFor(synthmath::AdsrState &state, const synthmath::AdsrParams &params,
-              double seconds) {
-  float level = state.level;
-  for (int i = 0; i < static_cast<int>(seconds * adsrRate); ++i) {
-    level = synthmath::adsrTick(state, params, adsrRate);
-  }
-  return level;
+float tickFor(synthmath::AdsrState &state, const synthmath::AdsrParams &params, double seconds) {
+    float level = state.level;
+    for (int i = 0; i < static_cast<int>(seconds * adsrRate); ++i) {
+        level = synthmath::adsrTick(state, params, adsrRate);
+    }
+    return level;
 }
 } // namespace
 
 TEST_CASE("ADSR follows attack, decay, sustain and release") {
-  const synthmath::AdsrParams params{0.01F, 0.1F, 0.5F, 0.2F};
-  synthmath::AdsrState state;
-  synthmath::adsrGateOn(state);
-  CHECK(tickFor(state, params, 0.01) == Approx(1.0F).margin(0.02));
-  CHECK(tickFor(state, params, 0.1) == Approx(0.5F).margin(0.02));
-  for (int i = 0; i < 48000; ++i) {
-    CHECK(synthmath::adsrTick(state, params, adsrRate) ==
-          Approx(0.5F).margin(0.001));
-  }
-  synthmath::adsrGateOff(state);
-  CHECK(tickFor(state, params, 0.2) < 0.01F);
+    const synthmath::AdsrParams params{0.01F, 0.1F, 0.5F, 0.2F};
+    synthmath::AdsrState state;
+    synthmath::adsrGateOn(state);
+    CHECK(tickFor(state, params, 0.01) == Approx(1.0F).margin(0.02));
+    CHECK(tickFor(state, params, 0.1) == Approx(0.5F).margin(0.02));
+    for (int i = 0; i < 48000; ++i) {
+        CHECK(synthmath::adsrTick(state, params, adsrRate) == Approx(0.5F).margin(0.001));
+    }
+    synthmath::adsrGateOff(state);
+    CHECK(tickFor(state, params, 0.2) < 0.01F);
 }
 
 TEST_CASE("ADSR stays within 0..1 over a grid of parameters") {
-  for (const float attack : {0.001F, 0.05F, 5.0F}) {
-    for (const float decay : {0.001F, 0.05F, 5.0F}) {
-      for (const float sustain : {0.0F, 0.3F, 1.0F}) {
-        for (const float release : {0.001F, 0.05F, 10.0F}) {
-          const synthmath::AdsrParams params{attack, decay, sustain, release};
-          synthmath::AdsrState state;
-          synthmath::adsrGateOn(state);
-          for (int i = 0; i < 48000; ++i) {
-            const float level = synthmath::adsrTick(state, params, adsrRate);
-            REQUIRE(level >= 0.0F);
-            REQUIRE(level <= 1.0F);
-          }
-          synthmath::adsrGateOff(state);
-          for (int i = 0; i < 48000; ++i) {
-            const float level = synthmath::adsrTick(state, params, adsrRate);
-            REQUIRE(level >= 0.0F);
-            REQUIRE(level <= 1.0F);
-          }
+    for (const float attack : {0.001F, 0.05F, 5.0F}) {
+        for (const float decay : {0.001F, 0.05F, 5.0F}) {
+            for (const float sustain : {0.0F, 0.3F, 1.0F}) {
+                for (const float release : {0.001F, 0.05F, 10.0F}) {
+                    const synthmath::AdsrParams params{attack, decay, sustain, release};
+                    synthmath::AdsrState state;
+                    synthmath::adsrGateOn(state);
+                    for (int i = 0; i < 48000; ++i) {
+                        const float level = synthmath::adsrTick(state, params, adsrRate);
+                        REQUIRE(level >= 0.0F);
+                        REQUIRE(level <= 1.0F);
+                    }
+                    synthmath::adsrGateOff(state);
+                    for (int i = 0; i < 48000; ++i) {
+                        const float level = synthmath::adsrTick(state, params, adsrRate);
+                        REQUIRE(level >= 0.0F);
+                        REQUIRE(level <= 1.0F);
+                    }
+                }
+            }
         }
-      }
     }
-  }
 }
 
 TEST_CASE("ADSR retrigger restarts the attack from the current level") {
-  const synthmath::AdsrParams params{0.01F, 0.1F, 0.5F, 0.2F};
-  synthmath::AdsrState state;
-  synthmath::adsrGateOn(state);
-  while (state.level < 0.5F) {
-    synthmath::adsrTick(state, params, adsrRate);
-  }
-  const float before = state.level;
-  synthmath::adsrGateOn(state);
-  CHECK(synthmath::adsrTick(state, params, adsrRate) > before);
+    const synthmath::AdsrParams params{0.01F, 0.1F, 0.5F, 0.2F};
+    synthmath::AdsrState state;
+    synthmath::adsrGateOn(state);
+    while (state.level < 0.5F) {
+        synthmath::adsrTick(state, params, adsrRate);
+    }
+    const float before = state.level;
+    synthmath::adsrGateOn(state);
+    CHECK(synthmath::adsrTick(state, params, adsrRate) > before);
+}
+
+TEST_CASE("LFO phase increment completes a cycle at the given rate") {
+    CHECK(synthmath::lfoPhaseIncrement(2.0, 48000.0) * 24000.0 == Approx(1.0).margin(1e-9));
+}
+
+TEST_CASE("LFO shapes reuse the waveform functions") {
+    using synthmath::LfoShape;
+    for (const double phase : {0.0, 0.25, 0.5, 0.75}) {
+        CHECK(synthmath::lfoValue(LfoShape::sine, phase) == synthmath::sineSample(phase));
+        CHECK(synthmath::lfoValue(LfoShape::saw, phase) == synthmath::sawSample(phase));
+        CHECK(synthmath::lfoValue(LfoShape::square, phase) == synthmath::squareSample(phase));
+    }
+}
+
+TEST_CASE("Octave offset scales the frequency by powers of two") {
+    CHECK(synthmath::applyOctaveOffset(440.0, 1.0) == Approx(880.0).margin(1e-9));
+    CHECK(synthmath::applyOctaveOffset(440.0, -1.0) == Approx(220.0).margin(1e-9));
+    CHECK(synthmath::applyOctaveOffset(440.0, 0.0) == Approx(440.0).margin(1e-9));
+}
+
+TEST_CASE("Modulated cutoff: depth 0 changes nothing, full depth stays under the clamp") {
+    constexpr double sampleRate = 48000.0;
+    for (const float base : {20.0F, 500.0F, 5000.0F, 20000.0F}) {
+        for (const float lfo : {-1.0F, -0.5F, 0.0F, 0.5F, 1.0F}) {
+            if (base < 0.45 * sampleRate) {
+                CHECK(synthmath::modulatedCutoffHz(base, lfo, 0.0F, sampleRate) == base);
+            }
+            CHECK(synthmath::modulatedCutoffHz(base, lfo, 1.0F, sampleRate) <= 0.45 * sampleRate);
+        }
+    }
+    CHECK(synthmath::modulatedCutoffHz(1000.0F, 1.0F, 1.0F, sampleRate) == Approx(4000.0F));
+    CHECK(synthmath::modulatedCutoffHz(1000.0F, -1.0F, 1.0F, sampleRate) == Approx(250.0F));
+}
+
+TEST_CASE("Filter stays finite and bounded with the cutoff moved every sample by the LFO") {
+    using synthmath::LfoShape;
+    for (const auto shape : {LfoShape::sine, LfoShape::saw, LfoShape::square}) {
+        for (const float cutoff : {20.0F, 500.0F, 5000.0F, 21000.0F}) {
+            for (const float resonance : {0.0F, 0.5F, 0.9F, 1.0F}) {
+                for (const double sampleRate : {44100.0, 48000.0, 96000.0}) {
+                    synthmath::FilterState state;
+                    std::uint32_t noiseState = 1;
+                    double phase = 0.0;
+                    const double increment = synthmath::lfoPhaseIncrement(20.0, sampleRate);
+                    for (int i = 0; i < 20000; ++i) {
+                        const auto hz =
+                            synthmath::modulatedCutoffHz(cutoff, synthmath::lfoValue(shape, phase), 1.0F, sampleRate);
+                        const auto coefficients = synthmath::filterCoefficients(hz, resonance, sampleRate);
+                        const auto out = synthmath::filterTick(state, coefficients, synthmath::noiseSample(noiseState));
+                        REQUIRE(std::isfinite(out));
+                        REQUIRE(std::abs(out) < 100.0F);
+                        phase += increment;
+                        phase -= std::floor(phase);
+                    }
+                }
+            }
+        }
+    }
 }

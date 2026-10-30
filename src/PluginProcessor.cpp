@@ -29,6 +29,10 @@ MiniSynthProcessor::MiniSynthProcessor()
     sustainParameter = state.getParameter(sustainId);
     releaseParam = state.getRawParameterValue(releaseId);
     releaseParameter = state.getParameter(releaseId);
+    lfoShapeParam = state.getRawParameterValue(lfoShapeId);
+    lfoRateParam = state.getRawParameterValue(lfoRateId);
+    lfoDepthParam = state.getRawParameterValue(lfoDepthId);
+    lfoDepthParameter = state.getParameter(lfoDepthId);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLayout() {
@@ -87,6 +91,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout MiniSynthProcessor::createLa
     addTime(releaseId, "Release", 10.0F, 0.3F, 0.3F);
     layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID(waveformId, 1), "Waveform",
                                                             juce::StringArray{"Sine", "Saw", "Square", "Noise"}, 1));
+    layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID(lfoShapeId, 1), "LFO Shape",
+                                                            juce::StringArray{"Sine", "Saw", "Square"}, 0));
+    const auto rateToText = [](float hz, int) { return juce::String(hz, hz < 1.0F ? 2 : 1) + " Hz"; };
+    const auto rateFromText = [](const juce::String &text) { return text.getFloatValue(); };
+    // Centre at the geometric mean of the range, which makes the skew exactly logarithmic.
+    juce::NormalisableRange<float> lfoRateRange(static_cast<float>(synthmath::lfoMinRateHz),
+                                                static_cast<float>(synthmath::lfoMaxRateHz));
+    lfoRateRange.setSkewForCentre(static_cast<float>(std::sqrt(synthmath::lfoMinRateHz * synthmath::lfoMaxRateHz)));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID(lfoRateId, 1), "LFO Rate", lfoRateRange,
+                                                           1.0F,
+                                                           juce::AudioParameterFloatAttributes()
+                                                               .withStringFromValueFunction(rateToText)
+                                                               .withValueFromStringFunction(rateFromText)));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID(lfoDepthId, 1), "LFO Depth", juce::NormalisableRange<float>(0.0F, 1.0F), 0.0F,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction(toText).withValueFromStringFunction(
+            fromText)));
     return layout;
 }
 
@@ -104,6 +125,8 @@ void MiniSynthProcessor::prepareToPlay(double newSampleRate, int) {
     filterState = {};
     filterCoefficients = synthmath::filterCoefficients(cutoffParam->load(), resonanceParam->load(), sampleRate);
     phase = 0.0;
+    lfoPhase = 0.0;
+    lfoWasModulating = false;
     currentNote = -1;
 }
 
@@ -155,6 +178,9 @@ void MiniSynthProcessor::handleMidi(const juce::MidiMessage &message) {
         case synthmath::releaseControlChange:
             releaseParameter->setValueNotifyingHost(value);
             break;
+        case synthmath::lfoDepthControlChange:
+            lfoDepthParameter->setValueNotifyingHost(value);
+            break;
         default:
             break;
         }
@@ -181,14 +207,27 @@ void MiniSynthProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Mi
         const synthmath::AdsrParams adsrParams{attackParam->load(), decayParam->load(), sustainParam->load(),
                                                releaseParam->load()};
         const auto waveform = static_cast<synthmath::Waveform>(juce::roundToInt(waveformParam->load()));
+        const auto lfoShape = static_cast<synthmath::LfoShape>(juce::roundToInt(lfoShapeParam->load()));
+        const auto lfoIncrement = synthmath::lfoPhaseIncrement(lfoRateParam->load(), sampleRate);
+        const float lfoDepth = lfoDepthParam->load();
         const int next = event != midi.end() ? std::min((*event).samplePosition, numSamples) : numSamples;
         for (; position < next; ++position) {
             // Coefficients are recomputed only while a smoother is still moving.
-            const bool moving = cutoff.isSmoothing() || resonance.isSmoothing();
+            // The LFO runs freely, also with no note. One more update after the depth returns to 0 puts
+            // the coefficients back on the Cutoff parameter.
+            const bool modulating = lfoDepth > 0.0F;
+            const bool moving = cutoff.isSmoothing() || resonance.isSmoothing() || modulating || lfoWasModulating;
+            lfoWasModulating = modulating;
             const float cutoffHz = cutoff.getNextValue();
             const float resonanceValue = resonance.getNextValue();
             if (moving) {
-                filterCoefficients = synthmath::filterCoefficients(cutoffHz, resonanceValue, sampleRate);
+                const auto modulatedHz = synthmath::modulatedCutoffHz(cutoffHz, synthmath::lfoValue(lfoShape, lfoPhase),
+                                                                      lfoDepth, sampleRate);
+                filterCoefficients = synthmath::filterCoefficients(modulatedHz, resonanceValue, sampleRate);
+            }
+            lfoPhase += lfoIncrement;
+            if (lfoPhase >= 1.0) {
+                lfoPhase -= 1.0;
             }
             const auto filtered = synthmath::filterTick(filterState, filterCoefficients,
                                                         synthmath::waveSample(waveform, phase, noiseState));

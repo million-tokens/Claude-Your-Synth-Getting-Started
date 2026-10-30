@@ -45,6 +45,9 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     static constexpr auto decayId = "decay";
     static constexpr auto sustainId = "sustain";
     static constexpr auto releaseId = "release";
+    static constexpr auto lfoShapeId = "lfoShape";
+    static constexpr auto lfoRateId = "lfoRate";
+    static constexpr auto lfoDepthId = "lfoDepth";
 
   private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -66,10 +69,16 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     juce::RangedAudioParameter *sustainParameter = nullptr;
     std::atomic<float> *releaseParam = nullptr;
     juce::RangedAudioParameter *releaseParameter = nullptr;
+    std::atomic<float> *lfoShapeParam = nullptr;
+    std::atomic<float> *lfoRateParam = nullptr;
+    std::atomic<float> *lfoDepthParam = nullptr;
+    juce::RangedAudioParameter *lfoDepthParameter = nullptr;
 
     double sampleRate = 0.0;
     double phase = 0.0;
     double phaseIncrement = 0.0;
+    double lfoPhase = 0.0;
+    bool lfoWasModulating = false;
     std::uint32_t noiseState = 0x12345678U;
     int currentNote = -1;
     juce::SmoothedValue<float> level;

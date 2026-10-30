@@ -10,6 +10,9 @@ class MiniSynthEditor final : public juce::AudioProcessorEditor {
 
   private:
     void addKnob(juce::Slider &slider, juce::Label &label);
+    void addChoiceBox(juce::AudioProcessorValueTreeState &state, juce::ComboBox &box, juce::Label &label,
+                      const char *parameterId,
+                      std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> &attachment);
 
     juce::Slider levelSlider{juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow};
     juce::Label levelLabel{{}, "Level"};
@@ -35,4 +38,13 @@ class MiniSynthEditor final : public juce::AudioProcessorEditor {
     juce::ComboBox waveformBox;
     juce::Label waveformLabel{{}, "Waveform"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveformAttachment;
+    juce::ComboBox lfoShapeBox;
+    juce::Label lfoShapeLabel{{}, "LFO Shape"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lfoShapeAttachment;
+    juce::Slider lfoRateSlider{juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow};
+    juce::Label lfoRateLabel{{}, "LFO Rate"};
+    juce::AudioProcessorValueTreeState::SliderAttachment lfoRateAttachment;
+    juce::Slider lfoDepthSlider{juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow};
+    juce::Label lfoDepthLabel{{}, "LFO Depth"};
+    juce::AudioProcessorValueTreeState::SliderAttachment lfoDepthAttachment;
 };

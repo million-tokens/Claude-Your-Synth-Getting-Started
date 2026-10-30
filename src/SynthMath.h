@@ -14,6 +14,7 @@ inline constexpr int attackControlChange = 73;
 inline constexpr int decayControlChange = 74;
 inline constexpr int sustainControlChange = 75;
 inline constexpr int releaseControlChange = 76;
+inline constexpr int lfoDepthControlChange = 77;
 
 inline double midiNoteToFrequency(int note) {
     return 440.0 * std::pow(2.0, (note - 69) / 12.0);
@@ -118,6 +119,43 @@ inline float filterTick(FilterState &state, const FilterCoefficients &c, float i
     state.ic1eq = 2.0F * v1 - state.ic1eq;
     state.ic2eq = 2.0F * v2 - state.ic2eq;
     return v2;
+}
+
+// LFO on the cutoff. It moves the cutoff in octaves, so the sweep sounds the same at any cutoff;
+// a fixed Hz offset would swamp a low cutoff and vanish at a high one.
+enum class LfoShape { sine, saw, square };
+
+inline constexpr double lfoMinRateHz = 0.05;
+inline constexpr double lfoMaxRateHz = 20.0;
+// Full depth moves the cutoff by plus or minus this many octaves.
+inline constexpr double lfoMaxOctaves = 2.0;
+
+inline double lfoPhaseIncrement(double rateHz, double sampleRate) {
+    return rateHz / sampleRate;
+}
+
+// Reuses the oscillator shapes, so the maths exists once. The result is in [-1, 1].
+inline float lfoValue(LfoShape shape, double phase) {
+    switch (shape) {
+    case LfoShape::sine:
+        return sineSample(phase);
+    case LfoShape::saw:
+        return sawSample(phase);
+    case LfoShape::square:
+        return squareSample(phase);
+    }
+    return 0.0F;
+}
+
+inline double applyOctaveOffset(double baseHz, double octaves) {
+    return baseHz * std::pow(2.0, octaves);
+}
+
+// Offsets the cutoff by lfoValue * depth * lfoMaxOctaves, then clamps to 0.45 * sampleRate.
+inline float modulatedCutoffHz(float baseHz, float lfoValue, float depth, double sampleRate) {
+    const double octaves = static_cast<double>(lfoValue) * static_cast<double>(depth) * lfoMaxOctaves;
+    const double hz = applyOctaveOffset(static_cast<double>(baseHz), octaves);
+    return static_cast<float>(std::min(hz, cutoffNyquistRatio * sampleRate));
 }
 
 // Amplitude envelope. Each timed segment is a one-pole move towards a target placed beyond its end
