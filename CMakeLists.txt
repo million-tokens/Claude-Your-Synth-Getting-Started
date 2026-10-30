@@ -29,6 +29,7 @@ juce_add_plugin(MiniSynth
 
 target_sources(MiniSynth PRIVATE
     src/PluginProcessor.cpp
+    src/PluginEditor.cpp
 )
 
 target_compile_definitions(MiniSynth

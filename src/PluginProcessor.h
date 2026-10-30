@@ -2,6 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <atomic>
+
 class MiniSynthProcessor final : public juce::AudioProcessor {
   public:
     MiniSynthProcessor();
@@ -28,6 +30,26 @@ class MiniSynthProcessor final : public juce::AudioProcessor {
     void getStateInformation(juce::MemoryBlock &destData) override;
     void setStateInformation(const void *data, int sizeInBytes) override;
 
+    juce::AudioProcessorValueTreeState &getState() {
+        return state;
+    }
+
+    static constexpr auto levelId = "level";
+
   private:
+    static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    void handleMidi(const juce::MidiMessage &message);
+
+    juce::AudioProcessorValueTreeState state;
+    std::atomic<float> *levelParam = nullptr;
+    juce::RangedAudioParameter *levelParameter = nullptr;
+
+    double sampleRate = 0.0;
+    double phase = 0.0;
+    double phaseIncrement = 0.0;
+    int currentNote = -1;
+    juce::SmoothedValue<float> level;
+    juce::SmoothedValue<float> noteGain;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniSynthProcessor)
 };

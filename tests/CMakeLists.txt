@@ -9,7 +9,10 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(MiniSynthTests
     ProductNameTest.cpp
+    SynthMathTest.cpp
 )
+
+target_include_directories(MiniSynthTests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 get_target_property(MINISYNTH_PRODUCT_NAME MiniSynth JUCE_PRODUCT_NAME)
 
